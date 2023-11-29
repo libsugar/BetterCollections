@@ -152,3 +152,4 @@ public readonly struct ReadOnlyMemoryRef<T>(ReadOnlyMemory<T> memory, int offset
 
     #endregion
 }
+

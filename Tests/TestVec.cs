@@ -3,6 +3,7 @@ using BetterCollections;
 
 namespace Tests;
 
+[Parallelizable]
 public class TestVec
 {
     [Test]
