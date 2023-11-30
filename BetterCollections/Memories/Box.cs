@@ -4,7 +4,7 @@ using System.Runtime.CompilerServices;
 
 namespace BetterCollections.Memories;
 
-public class Box<T>(T Value) : IRef<T>, IReadOnlyRef<T>,
+public class Box<T>(T Value) : IRef<T>, IReadOnlyRef<T>, IStrongBox,
     IEquatable<T>, IEquatable<Box<T>>,
     IComparable<T>, IComparable<Box<T>>
 {
@@ -67,6 +67,16 @@ public class Box<T>(T Value) : IRef<T>, IReadOnlyRef<T>,
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool operator >=(Box<T> left, Box<T> right) => left.CompareTo(right) >= 0;
+
+    #endregion
+
+    #region IStrongBox
+
+    object? IStrongBox.Value
+    {
+        get => Value;
+        set => Value = (T)value!;
+    }
 
     #endregion
 }

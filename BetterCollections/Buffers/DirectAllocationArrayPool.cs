@@ -10,8 +10,5 @@ public class DirectAllocationArrayPool<T> : ArrayPool<T>
 
     public override T[] Rent(int minimumLength) => new T[minimumLength];
 
-    public override void Return(T[] array, bool clearArray = false)
-    {
-        if (clearArray) Array.Clear(array, 0, array.Length);
-    }
+    public override void Return(T[] array, bool clearArray = false) { }
 }

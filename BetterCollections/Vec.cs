@@ -17,22 +17,19 @@ public class Vec<T> : IList<T>, IReadOnlyList<T>, IDisposable
 
     protected const int DefaultCapacity = 4;
 
-    public Vec(ArrayPool<T> pool)
-    {
-        this.pool = pool;
-        array = pool.Rent(0);
-        size = 0;
-    }
+    public Vec() : this(0) { }
+
+    public Vec(int cap) : this(cap, DirectAllocationArrayPool<T>.Instance) { }
+
+    public Vec(ArrayPool<T> pool) : this(0, pool) { }
 
     public Vec(int cap, ArrayPool<T> pool)
     {
+        if (cap < 0) throw new ArgumentOutOfRangeException(nameof(cap));
         this.pool = pool;
         array = pool.Rent(cap);
         size = 0;
     }
-
-    public Vec() : this(DirectAllocationArrayPool<T>.Instance) { }
-    public Vec(int cap) : this(cap, DirectAllocationArrayPool<T>.Instance) { }
 
     public int Count => size;
 
@@ -48,10 +45,11 @@ public class Vec<T> : IList<T>, IReadOnlyList<T>, IDisposable
         get => AsSpan[index];
         set => AsSpan[index] = value;
     }
-    
+
     public T[] UnsafeArray => array;
-    
+
     public ArrayRef<T> UnsafeGetArrayRef(int index) => new(array, index);
+    public OffsetRef<T> UnsafeGetOffsetRef(int index) => OffsetRef.UnsafeCreate(array, ref array[index]);
 
     public ref T UnsafeGetRef(int index) => ref array[index];
 
@@ -78,7 +76,7 @@ public class Vec<T> : IList<T>, IReadOnlyList<T>, IDisposable
         if (array.Length == 0)
         {
             array = pool.Rent(DefaultCapacity);
-            pool.Return(old_array);
+            pool.Return(old_array, RuntimeHelpers.IsReferenceOrContainsReferences<T>());
         }
         else
         {
@@ -89,11 +87,11 @@ public class Vec<T> : IList<T>, IReadOnlyList<T>, IDisposable
             }
             catch
             {
-                pool.Return(new_array);
+                pool.Return(new_array, RuntimeHelpers.IsReferenceOrContainsReferences<T>());
                 throw;
             }
             array = new_array;
-            pool.Return(old_array);
+            pool.Return(old_array, RuntimeHelpers.IsReferenceOrContainsReferences<T>());
         }
     }
 
@@ -148,13 +146,13 @@ public class Vec<T> : IList<T>, IReadOnlyList<T>, IDisposable
             }
             catch
             {
-                pool.Return(new_array);
+                pool.Return(new_array, RuntimeHelpers.IsReferenceOrContainsReferences<T>());
                 throw;
             }
 
             array = new_array;
             size += 1;
-            pool.Return(old_array);
+            pool.Return(old_array, RuntimeHelpers.IsReferenceOrContainsReferences<T>());
         }
         else
         {
@@ -191,11 +189,9 @@ public class Vec<T> : IList<T>, IReadOnlyList<T>, IDisposable
 
     protected virtual void Dispose(bool disposing)
     {
-        Clear();
-
         if (array != null!)
         {
-            pool.Return(array);
+            pool.Return(array, RuntimeHelpers.IsReferenceOrContainsReferences<T>());
             array = null!;
         }
     }

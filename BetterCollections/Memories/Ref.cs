@@ -40,6 +40,23 @@ public readonly struct ArrayRef<T>(T[] array, int offset) :
     public static bool operator !=(ArrayRef<T> left, ArrayRef<T> right) => !left.Equals(right);
 
     #endregion
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static implicit operator ReadOnlyArrayRef<T>(ArrayRef<T> self) => new(self.array, self.offset);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static implicit operator MemoryRef<T>(ArrayRef<T> self) => new(self.array, self.offset);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static implicit operator ReadOnlyMemoryRef<T>(ArrayRef<T> self) => new(self.array, self.offset);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static implicit operator OffsetRef<T>(ArrayRef<T> self) =>
+        OffsetRef.UnsafeCreate(self.array, ref self.Value);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static implicit operator ReadOnlyOffsetRef<T>(ArrayRef<T> self) =>
+        OffsetRef.UnsafeCreateReadOnly(self.array, ref self.Value);
 }
 
 public readonly struct ReadOnlyArrayRef<T>(T[] array, int offset) :
@@ -76,6 +93,13 @@ public readonly struct ReadOnlyArrayRef<T>(T[] array, int offset) :
     public static bool operator !=(ReadOnlyArrayRef<T> left, ReadOnlyArrayRef<T> right) => !left.Equals(right);
 
     #endregion
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static implicit operator ReadOnlyOffsetRef<T>(ReadOnlyArrayRef<T> self) =>
+        OffsetRef.UnsafeCreateReadOnly(self.array, in self.Value);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static implicit operator ReadOnlyMemoryRef<T>(ReadOnlyArrayRef<T> self) => new(self.array, self.offset);
 }
 
 public readonly struct MemoryRef<T>(Memory<T> memory, int offset) :
@@ -152,4 +176,3 @@ public readonly struct ReadOnlyMemoryRef<T>(ReadOnlyMemory<T> memory, int offset
 
     #endregion
 }
-

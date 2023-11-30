@@ -17,20 +17,17 @@ public static class OffsetRef
         ref Unsafe.As<byte, T>(ref Unsafe.Add(ref Unsafe.As<RawData>(obj).Data, offset));
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static unsafe OffsetRef<T> UnsafeCreate<T>(object obj, ref T addr)
+    public static OffsetRef<T> UnsafeCreate<T>(object obj, ref T addr)
     {
-        var source = (nuint)Unsafe.AsPointer(ref Unsafe.As<RawData>(obj).Data);
-        var target = (nuint)Unsafe.AsPointer(ref Unsafe.As<T, byte>(ref addr));
-        var offset = target - source;
+        var offset = (nuint)(nint)Unsafe.ByteOffset(ref Unsafe.As<RawData>(obj).Data, ref Unsafe.As<T, byte>(ref addr));
         return new(obj, offset);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static unsafe ReadOnlyOffsetRef<T> UnsafeCreateReadOnly<T>(object obj, ref readonly T addr)
+    public static ReadOnlyOffsetRef<T> UnsafeCreateReadOnly<T>(object obj, ref readonly T addr)
     {
-        var source = (nuint)Unsafe.AsPointer(ref Unsafe.As<RawData>(obj).Data);
-        var target = (nuint)Unsafe.AsPointer(ref Unsafe.As<T, byte>(ref Unsafe.AsRef(in addr)));
-        var offset = target - source;
+        var offset = (nuint)(nint)Unsafe.ByteOffset(ref Unsafe.As<RawData>(obj).Data,
+            ref Unsafe.As<T, byte>(ref Unsafe.AsRef(in addr)));
         return new(obj, offset);
     }
 }
