@@ -1,0 +1,5 @@
+- name: Apis
+  href: api/
+  homepage: api/index.md
+- name: Github
+  href: https://github.com/libsugar/BetterCollections
