@@ -23,7 +23,11 @@
 - Memories
   - `Box<T>` `ReadOnlyBox<T>`  
     Simply wrap a value onto the heap
-  - `ArrayRef<T>` `ReadOnlyArrayRef<T>` `MemoryRef<T>` `ReadOnlyMemoryRef<T>`  
-    A **fat reference** *(Array / Memory + offset)* that can be safely put on the **heap**, not a ref struct
+  - `ArrayRef<T>` `ReadOnlyArrayRef<T>`  
+    A **fat reference** *(`T[] + offset`)* that can be safely put on the **heap**, not a ref struct
+  - `MemoryRef<T>` `ReadOnlyMemoryRef<T>`  
+    A **fat reference** *(`Memory<T> + offset`)* that can be safely put on the **heap**, not a ref struct
+  - `OffsetRef<T>` `ReadOnlyOffsetRef<T>`  
+    A **fat reference** *(`object + offset`)* that can be safely put on the **heap**, not a ref struct
   - `MemoryEx`
     - Provides `GetEnumerator` for `Memory<T>` `ReadOnlyMemory<T>`
