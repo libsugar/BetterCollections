@@ -34,7 +34,7 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore
       - name: Install DocFx
-        run: choco install docfx -y
+        run: dotnet tool install -g docfx
       - name: Gen Docs
         working-directory: ./docs
         run: docfx
