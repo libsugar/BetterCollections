@@ -1,14 +1,10 @@
 ﻿using System;
 using System.Buffers;
-using System.Diagnostics;
-using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using BetterCollections.Buffers;
-#if NETCOREAPP3_0_OR_GREATER
+#if NET7_0_OR_GREATER
 using System.Runtime.Intrinsics;
-using System.Runtime.Intrinsics.Arm;
-using System.Runtime.Intrinsics.X86;
 #endif
 
 namespace BetterCollections.Misc;
@@ -41,7 +37,7 @@ public abstract partial class ASwissTable
         get
         {
 #if NETSTANDARD || NET6_0
-            return typeof(Vector<byte>);
+            return typeof(ulong);
 #else
 #if NET8_0_OR_GREATER
             if (Vector512.IsHardwareAccelerated) return typeof(Vector512<byte>);
@@ -63,13 +59,15 @@ public abstract partial class ASwissTable
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get =>
+#if NETSTANDARD || NET6_0
+            8u
+#else
 #if NET8_0_OR_GREATER
             Vector512.IsHardwareAccelerated ? 64u :
 #endif
-#if NET7_0_OR_GREATER
-            Vector256.IsHardwareAccelerated ? 32u :
+            Vector256.IsHardwareAccelerated ? 32u : 16u
 #endif
-            16u;
+        ;
     }
 
     #endregion
@@ -81,7 +79,7 @@ public abstract partial class ASwissTable
     {
         return
 #if NETSTANDARD || NET6_0
-            poolFactory.Get<Vector<byte>>();
+            poolFactory.Get<ulong>();
 #else
 #if NET8_0_OR_GREATER
             Vector512.IsHardwareAccelerated ? poolFactory.Get<Vector512<byte>>() :
@@ -99,13 +97,14 @@ public abstract partial class ASwissTable
     {
         return
 #if NETSTANDARD || NET6_0
-            ((ArrayPool<Vector<byte>>)poolCtrl).Rent(groups);
+            ((ArrayPool<ulong>)poolCtrl).Rent(groups);
 #else
 #if NET8_0_OR_GREATER
             Vector512.IsHardwareAccelerated ? ((ArrayPool<Vector512<byte>>)poolCtrl).Rent(groups) :
 #endif
-            Vector256.IsHardwareAccelerated ? ((ArrayPool<Vector256<byte>>)poolCtrl).Rent(groups) :
-            ((ArrayPool<Vector128<byte>>)poolCtrl).Rent(groups);
+            Vector256.IsHardwareAccelerated
+                ? ((ArrayPool<Vector256<byte>>)poolCtrl).Rent(groups)
+                : ((ArrayPool<Vector128<byte>>)poolCtrl).Rent(groups);
 #endif
     }
 
@@ -117,7 +116,7 @@ public abstract partial class ASwissTable
     protected static void ReturnCtrl(object poolCtrl, Array ctrl)
     {
 #if NETSTANDARD || NET6_0
-        ((ArrayPool<Vector<byte>>)poolCtrl).Return((Vector<byte>[])ctrl);
+        ((ArrayPool<ulong>)poolCtrl).Return((ulong[])ctrl);
 #else
 #if NET8_0_OR_GREATER
         if (Vector512.IsHardwareAccelerated)
@@ -144,7 +143,7 @@ public abstract partial class ASwissTable
     {
         Span<byte> span;
 #if NETSTANDARD || NET6_0
-        span = MemoryMarshal.Cast<Vector<byte>, byte>(((Vector<byte>[])ctrl).AsSpan());
+        span = MemoryMarshal.Cast<ulong, byte>(((ulong[])ctrl).AsSpan());
 #else
 #if NET8_0_OR_GREATER
         if (Vector512.IsHardwareAccelerated)
@@ -176,7 +175,10 @@ public abstract partial class ASwissTable
         Unsafe.SkipInit(out slot);
         if (size == 0) return false;
 #if NETSTANDARD || NET6_0
-        return TryH2GetSlot(ctrl_bytes, start, new Vector<byte>(h2), out slot);
+        Span<byte> bytes = stackalloc byte[8];
+        bytes.Fill(h2);
+        var ul = MemoryMarshal.Cast<byte, ulong>(bytes)[0];
+        return TryH2GetSlot(ctrl_bytes, start, ul, out slot);
 #else
 #if NET8_0_OR_GREATER
         if (Vector512.IsHardwareAccelerated)
