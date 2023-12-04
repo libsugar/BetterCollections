@@ -1,7 +1,7 @@
-﻿// namespace BetterCollections.Misc;
-//
-// internal enum InsertBehavior : byte
-// {
-//     None = 0,
-//     OverwriteIfExisting = 1,
-// }
+﻿namespace BetterCollections.Misc;
+
+public enum InsertBehavior : byte
+{
+    None = 0,
+    OverwriteIfExisting = 1,
+}
