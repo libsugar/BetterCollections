@@ -10,8 +10,23 @@ using System.Runtime.Intrinsics.X86;
 
 namespace BetterCollections.Misc;
 
-internal static class Utils
+public static class Utils
 {
+    /// <summary>
+    /// Create a ulong where all bytes are the specified value
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe ulong CreateULong(byte v)
+    {
+#if NET6_0_OR_GREATER
+        var v64 = Vector64.Create(v);
+        return *(ulong*)&v64;
+#else
+        var bytes = stackalloc byte[sizeof(ulong)] { v, v, v, v, v, v, v, v };
+        return *(ulong*)bytes;
+#endif
+    }
+
     /// <summary>
     /// Round up to power of 2
     /// </summary>
@@ -19,7 +34,7 @@ internal static class Utils
     /// <param name="binary">Must be power of 2, no check, need manually ensure</param>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int CeilBinary(this int value, int binary) => (value + (binary - 1)) & ~(binary - 1);
-    
+
     /// <summary>
     /// Round up to power of 2
     /// </summary>
@@ -47,7 +62,7 @@ internal static class Utils
 #if NET7_0_OR_GREATER
         return (uint)BitOperations.TrailingZeroCount(value);
 #else
-#if NETCOREAPP3_0_OR_GREATER
+#if NET6_0_OR_GREATER
         if (Bmi1.IsSupported)
         {
             // TZCNT contract is 0->32
@@ -71,6 +86,40 @@ internal static class Utils
             ref MemoryMarshal.GetReference(TrailingZeroCountDeBruijn),
             // uint|long -> IntPtr cast on 32-bit platforms does expensive overflow checks not needed here
             (IntPtr)(int)(((value & (uint)-(int)value) * 0x077CB531u) >> 27)); // Multi-cast mitigates redundant conv.u8
+#endif
+    }
+
+    /// <summary>
+    /// Count the number of trailing zero bits in an integer value.
+    /// Similar in behavior to the x86 instruction TZCNT.
+    /// </summary>
+    /// <param name="value">The value.</param>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static uint TrailingZeroCount(ulong value)
+    {
+#if NET7_0_OR_GREATER
+        return (uint)BitOperations.TrailingZeroCount(value);
+#else
+#if NET6_0_OR_GREATER
+        if (Bmi1.X64.IsSupported)
+        {
+            // TZCNT contract is 0->64
+            return (uint)Bmi1.X64.TrailingZeroCount(value);
+        }
+
+        if (ArmBase.Arm64.IsSupported)
+        {
+            return (uint)ArmBase.Arm64.LeadingZeroCount(ArmBase.Arm64.ReverseElementBits(value));
+        }
+#endif
+        uint lo = (uint)value;
+
+        if (lo == 0)
+        {
+            return 32 + TrailingZeroCount((uint)(value >> 32));
+        }
+
+        return TrailingZeroCount(lo);
 #endif
     }
 }

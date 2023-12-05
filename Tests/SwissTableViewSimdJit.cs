@@ -7,7 +7,7 @@ using Microsoft.VisualBasic.CompilerServices;
 
 namespace Tests;
 
-public class TestMapHash
+public class SwissTableViewSimdJit
 {
 #if NET8_0_OR_GREATER
     [Test]
