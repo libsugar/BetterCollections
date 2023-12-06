@@ -38,7 +38,8 @@
 - Cryptography
   - `AHasher`  
     A hasher that ensures even distribution of each bit  
-    If possible use Aes SIMD acceleration (.net7+)
+    If possible use Aes SIMD acceleration (.net7+)  
+    Algorithm from https://github.com/tkaitchuck/aHash
 
 #### Simd Support
   - .net8 +
