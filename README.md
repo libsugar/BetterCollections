@@ -35,7 +35,11 @@
     A **fat reference** *(`object + offset`)* that can be safely put on the **heap**, not a ref struct
   - `MemoryEx`
     - Provides `GetEnumerator` for `Memory<T>` `ReadOnlyMemory<T>`
-    
+- Cryptography
+  - `AHasher`  
+    A hasher that ensures even distribution of each bit  
+    If possible use Aes SIMD acceleration (.net7+)
+
 #### Simd Support
   - .net8 +
     - Vector512
