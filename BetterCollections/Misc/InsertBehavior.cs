@@ -2,6 +2,6 @@
 
 public enum InsertBehavior : byte
 {
-    None = 0,
+    FailureIfExisting = 0,
     OverwriteIfExisting = 1,
 }

@@ -19,16 +19,27 @@ public class Vec<T> : IList<T>, IReadOnlyList<T>, IDisposable
 
     public Vec() : this(0) { }
 
-    public Vec(int cap) : this(cap, DirectAllocationArrayPool<T>.Instance) { }
+    public Vec(int cap) : this(cap, ArrayPoolFactory.DirectAllocation) { }
 
-    public Vec(ArrayPool<T> pool) : this(0, pool) { }
+    public Vec(ArrayPoolFactory poolFactory) : this(0, poolFactory) { }
 
-    public Vec(int cap, ArrayPool<T> pool)
+    public Vec(int cap, ArrayPoolFactory poolFactory)
     {
         if (cap < 0) throw new ArgumentOutOfRangeException(nameof(cap));
-        this.pool = pool;
+        // ReSharper disable once VirtualMemberCallInConstructor
+        HandleMustReturn(poolFactory.MustReturn);
+        pool = poolFactory.Get<T>();
         array = pool.Rent(cap);
         size = 0;
+    }
+
+    /// <summary>
+    /// Hint: Virtual Member Call In <b>Constructor</b>
+    /// <para>Data may not be available when this method is called</para>
+    /// </summary>
+    protected virtual void HandleMustReturn(bool mustReturn)
+    {
+        if (!mustReturn) GC.SuppressFinalize(this);
     }
 
     public int Count => size;

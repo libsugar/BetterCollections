@@ -1,5 +1,6 @@
 ﻿using System.Buffers;
 using BetterCollections;
+using BetterCollections.Buffers;
 
 namespace Tests;
 
@@ -145,7 +146,7 @@ public class TestVec
     [Test]
     public void TestPoolAdd1()
     {
-        using var vec = new Vec<int>(ArrayPool<int>.Shared);
+        using var vec = new Vec<int>(ArrayPoolFactory.Shared);
         for (int i = 0; i < 100; i++)
         {
             vec.Add(i);

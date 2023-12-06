@@ -13,11 +13,11 @@
     Pretend to have pooling
   - `ArrayPoolFactory`  
     Factory abstraction provides array pool implementation
-- Sync
+- Not Sync / Non Concurrent / No Thread Safe
   - `Vec<T>`  
     Reimplemented `List<T>`, can unsafely retrieve the internal Array or as Span, Memory
     *todo* methods same to `List<T>`
-- Concurrent
+- Sync / Concurrent / Thread safe
   - `OnceInit<T>`  
     Similar to `Lazy<T>`, but provides init function when getting  
     Inspired by rust `OnceCell<T>`

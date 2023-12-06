@@ -4,14 +4,17 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using BetterCollections.Buffers;
 #if NET7_0_OR_GREATER
 using System.Runtime.Intrinsics;
 #endif
+using BetterCollections.Memories;
 
 namespace BetterCollections.Misc;
+
+// reference https://faultlore.com/blah/hashbrown-tldr/
+// reference https://github.com/rust-lang/hashbrown
 
 public abstract partial class ASwissTable
 {
@@ -30,6 +33,12 @@ public abstract partial class ASwissTable
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected static byte GetH2(int hashCode) => (byte)((uint)hashCode & SlotValueMask);
+
+    #endregion
+
+    #region CtrlPos
+
+    protected record struct CtrlPos(uint group, uint offset);
 
     #endregion
 
@@ -236,33 +245,37 @@ public abstract partial class ASwissTable
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected static unsafe void LoadGroup<V>(in byte ptr, out V output)
+        => LoadGroup((byte*)Unsafe.AsPointer(ref Unsafe.AsRef(in ptr)), out output);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    protected static unsafe void LoadGroup<V>(byte* ptr, out V output)
     {
         Unsafe.SkipInit(out output);
 #if NET7_0_OR_GREATER
 #if NET8_0_OR_GREATER
         if (Vector512.IsHardwareAccelerated)
         {
-            Unsafe.As<V, Vector512<byte>>(ref output) = Vector512.Load((byte*)ptr);
+            Unsafe.As<V, Vector512<byte>>(ref output) = Vector512.Load(ptr);
             return;
         }
 #endif
         if (Vector256.IsHardwareAccelerated)
         {
-            Unsafe.As<V, Vector256<byte>>(ref output) = Vector256.Load((byte*)ptr);
+            Unsafe.As<V, Vector256<byte>>(ref output) = Vector256.Load(ptr);
             return;
         }
         if (Vector128.IsHardwareAccelerated)
         {
-            Unsafe.As<V, Vector128<byte>>(ref output) = Vector128.Load((byte*)ptr);
+            Unsafe.As<V, Vector128<byte>>(ref output) = Vector128.Load(ptr);
             return;
         }
         if (Vector64.IsHardwareAccelerated)
         {
-            Unsafe.As<V, Vector64<byte>>(ref output) = Vector64.Load((byte*)ptr);
+            Unsafe.As<V, Vector64<byte>>(ref output) = Vector64.Load(ptr);
             return;
         }
 #endif
-        Unsafe.As<V, ulong>(ref output) = Unsafe.ReadUnaligned<ulong>((byte*)ptr);
+        Unsafe.As<V, ulong>(ref output) = Unsafe.ReadUnaligned<ulong>(ptr);
     }
 
     #endregion
@@ -394,6 +407,56 @@ public abstract partial class ASwissTable
     }
 
     #endregion
+
+    #region FullBucketsIndicesSpanEnumerator
+
+    protected ref struct FullBucketsIndicesSpanEnumerator<V>(Span<byte> ctrl)
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public FullBucketsIndicesSpanEnumerator<V> GetEnumerator() => this;
+
+        private readonly Span<byte> ctrl = ctrl;
+        private uint index = 0;
+        private MatchBits match = LoadMatch(ctrl, 0);
+
+        public uint Current
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get;
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private set;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private MatchBits LoadMatch() => LoadMatch(ctrl, index);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static MatchBits LoadMatch(Span<byte> ctrl, uint index)
+        {
+            LoadGroup<V>(in ctrl[(int)index], out var group);
+            return MatchValue(ref group);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool MoveNext()
+        {
+            for (;;)
+            {
+                if (match)
+                {
+                    Current = index + match.Offset;
+                    match = match.Next;
+                    return true;
+                }
+                if (index >= ctrl.Length) return false;
+                index += CtrlGroupSize;
+                if (index >= ctrl.Length) return false;
+                LoadMatch();
+            }
+        }
+    }
+
+    #endregion
 }
 
 public abstract class ASwissTable<T, EH> : ASwissTable, IDisposable
@@ -420,6 +483,7 @@ public abstract class ASwissTable<T, EH> : ASwissTable, IDisposable
     /// How many elements are stored
     /// </summary>
     private int count;
+    private int version;
 
     protected readonly ArrayPool<byte> poolCtrl;
     protected readonly ArrayPool<T> poolSlot;
@@ -438,15 +502,17 @@ public abstract class ASwissTable<T, EH> : ASwissTable, IDisposable
         get => count;
     }
 
+    protected int Version => version;
+
     protected Span<byte> Ctrl
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => ctrl.AsSpan(0, (int)(size + CtrlGroupSize));
+        get => size == 0 ? default : ctrl.AsSpan(0, (int)(size + CtrlGroupSize));
     }
     protected Span<T> Slots
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => slots.AsSpan(0, (int)size);
+        get => size == 0 ? default : slots.AsSpan(0, (int)size);
     }
 
     protected byte[] BaseUnsafeGetCtrl() => ctrl;
@@ -458,16 +524,27 @@ public abstract class ASwissTable<T, EH> : ASwissTable, IDisposable
 
     protected ASwissTable(ArrayPoolFactory poolFactory, EH eh, int cap)
     {
-        this.eh = eh;
-        poolCtrl = poolFactory.Get<byte>();
-        poolSlot = poolFactory.Get<T>();
         if (cap < 0) throw new ArgumentOutOfRangeException(nameof(cap), "capacity must > 0");
+        // ReSharper disable once VirtualMemberCallInConstructor
+        HandleMustReturn(poolFactory.MustReturn);
         count = 0;
+        this.eh = eh;
+        poolCtrl = poolFactory.GetMayUninitialized<byte>();
+        poolSlot = poolFactory.Get<T>();
         var groupSize = CtrlGroupSize;
         size = cap == 0 ? 0 : ((uint)cap).CeilBinary(groupSize);
-        ctrl = poolCtrl.Rent((int)(size + groupSize));
+        ctrl = poolCtrl.Rent((int)(size == 0 ? 0 : size + groupSize));
         slots = poolSlot.Rent((int)size);
         Ctrl.Fill(SlotIsEmpty);
+    }
+
+    /// <summary>
+    /// Hint: Virtual Member Call In <b>Constructor</b>
+    /// <para>Data may not be available when this method is called</para>
+    /// </summary>
+    protected virtual void HandleMustReturn(bool mustReturn)
+    {
+        if (!mustReturn) GC.SuppressFinalize(this);
     }
 
     #endregion
@@ -489,36 +566,37 @@ public abstract class ASwissTable<T, EH> : ASwissTable, IDisposable
 
     #region TryFind
 
-    protected bool TryFind(T value, out uint slot_index)
+    protected bool TryFind<K, KEH>(in K key, in KEH keh, out uint slot_index) where KEH : IEqHashKey<T, K, EH>
     {
         Unsafe.SkipInit(out slot_index);
         if (size == 0) return false;
 
-        var hash = eh.CalcHash(in value);
+        var hash = keh.CalcHash(in eh, in key);
         var h1 = GetH1(hash);
         var h2 = GetH2(hash);
 
 #if NET7_0_OR_GREATER
 #if NET8_0_OR_GREATER
         if (Vector512.IsHardwareAccelerated)
-            return TryFind<Vector512<byte>>(in value, h1, h2, out slot_index);
+            return TryFind<Vector512<byte>, K, KEH>(in key, in keh, h1, h2, out slot_index);
 #endif
         if (Vector256.IsHardwareAccelerated)
-            return TryFind<Vector256<byte>>(in value, h1, h2, out slot_index);
+            return TryFind<Vector256<byte>, K, KEH>(in key, in keh, h1, h2, out slot_index);
         if (Vector128.IsHardwareAccelerated)
-            return TryFind<Vector128<byte>>(in value, h1, h2, out slot_index);
+            return TryFind<Vector128<byte>, K, KEH>(in key, in keh, h1, h2, out slot_index);
         if (Vector64.IsHardwareAccelerated)
-            return TryFind<Vector64<byte>>(in value, h1, h2, out slot_index);
+            return TryFind<Vector64<byte>, K, KEH>(in key, in keh, h1, h2, out slot_index);
 #endif
-        return TryFind<ulong>(in value, h1, h2, out slot_index);
+        return TryFind<ulong, K, KEH>(in key, in keh, h1, h2, out slot_index);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private bool TryFind<V>(in T value, uint h1, byte h2, out uint slot_index)
+    private bool TryFind<V, K, KEH>(in K key, in KEH keh, uint h1, byte h2, out uint slot_index)
+        where KEH : IEqHashKey<T, K, EH>
     {
         Unsafe.SkipInit(out slot_index);
         var size = this.size;
-        if (size == 0) return false;
+        if (size == 0 || count == 0) return false;
 
         var ctrl_bytes = Ctrl;
         var slots = Slots;
@@ -530,7 +608,7 @@ public abstract class ASwissTable<T, EH> : ASwissTable, IDisposable
             {
                 var index = ModGetBucket(prop.pos + offset);
                 ref var slot = ref slots[(int)index];
-                if (eh.IsEq(in slot, in value))
+                if (keh.IsEq(eh, in key, in slot))
                 {
                     slot_index = index;
                     return true;
@@ -544,7 +622,7 @@ public abstract class ASwissTable<T, EH> : ASwissTable, IDisposable
 
     #region TryInsert
 
-    protected bool TryInsert(T value, InsertBehavior behavior)
+    protected bool TryInsert(in T value, InsertBehavior behavior)
     {
         var hash = eh.CalcHash(in value);
         var h1 = GetH1(hash);
@@ -568,22 +646,148 @@ public abstract class ASwissTable<T, EH> : ASwissTable, IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private bool TryInsert<V>(in T value, uint h1, byte h2, InsertBehavior behavior)
     {
-        if (TryFind<V>(in value, h1, h2, out var slot_index))
+        if (size == 0 || NeedGrow()) goto grow;
+        var r = TryGetInsertSlot<V>(in value, h1, h2, behavior, out var insert_slot, out var ctrl_pos);
+        switch (r)
         {
-            if (behavior is not InsertBehavior.OverwriteIfExisting) return false;
-            slots[slot_index] = value;
+            case SlotResult.Fail:
+                return false;
+            case SlotResult.Got:
+                goto do_insert;
+            case SlotResult.NeedGrow:
+                goto grow;
+            default:
+                throw new ArgumentOutOfRangeException(null,
+                    $"Internal control flow error at {nameof(TryInsert)}<{nameof(V)}>.{nameof(r)}");
+        }
+
+        grow:
+        Grow();
+
+        // ReSharper disable once RedundantAssignment
+        var success = TryGetInsertSlot<V>(h1, out insert_slot, out ctrl_pos);
+        Debug.Assert(success);
+
+        do_insert:
+        slots[insert_slot] = value;
+        WriteCtrl(ctrl_pos, h2);
+        count++;
+        version = unchecked(version + 1);
+        return true;
+    }
+
+    private enum SlotResult : byte
+    {
+        Fail,
+        Got,
+        NeedGrow,
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private SlotResult TryGetInsertSlot<V>(in T value, uint h1, byte h2, InsertBehavior behavior,
+        out uint insert_slot, out CtrlPos group_pos)
+    {
+        Unsafe.SkipInit(out insert_slot);
+        Unsafe.SkipInit(out group_pos);
+        var size = this.size;
+        if (size == 0) return SlotResult.NeedGrow;
+
+        var ctrl_bytes = Ctrl;
+        var slots = Slots;
+
+        for (var prop = H1StartProbe(h1);; prop.MoveNext(size))
+        {
+            LoadGroup<V>(in ctrl_bytes[(int)prop.pos], out var group);
+
+            {
+                foreach (var offset in MatchH2(ref group, h2))
+                {
+                    var index = ModGetBucket(prop.pos + offset);
+                    ref var slot = ref slots[(int)index];
+                    if (eh.IsEq(in slot, in value))
+                    {
+                        if (behavior is not InsertBehavior.OverwriteIfExisting) return SlotResult.Fail;
+                        insert_slot = index;
+                        group_pos = new(prop.pos, offset);
+                        return SlotResult.Got;
+                    }
+                }
+            }
+
+            {
+                if (TryFindInsertSlotInGroup(ref group, in prop, out insert_slot, out var offset))
+                {
+                    group_pos = new(prop.pos, offset);
+                    return SlotResult.Got;
+                }
+            }
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool TryGetInsertSlot<V>(uint h1, out uint insert_slot, out CtrlPos ctrl_pos)
+    {
+        Unsafe.SkipInit(out insert_slot);
+        Unsafe.SkipInit(out ctrl_pos);
+        var size = this.size;
+        if (size == 0) return false;
+
+        var ctrl_bytes = Ctrl;
+
+        for (var prop = H1StartProbe(h1);; prop.MoveNext(size))
+        {
+            LoadGroup<V>(in ctrl_bytes[(int)prop.pos], out var group);
+
+            if (TryFindInsertSlotInGroup(ref group, in prop, out insert_slot, out var offset))
+            {
+                ctrl_pos = new(prop.pos, offset);
+                return true;
+            }
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool TryFindInsertSlotInGroup<V>(ref V group, in ProbeSeq prop, out uint insert_slot, out uint offset)
+    {
+        Unsafe.SkipInit(out insert_slot);
+        Unsafe.SkipInit(out offset);
+        var match = MatchEmptyOrDelete(ref group);
+        if (match)
+        {
+            offset = match.Offset;
+            insert_slot = ModGetBucket(prop.pos + offset);
             return true;
         }
-        throw new NotImplementedException();
+        return false;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void WriteCtrl(CtrlPos ctrl_pos, byte h2)
+    {
+        var size = this.size;
+        var ctrl_bytes = Ctrl;
+        var pos = ctrl_pos.group + ctrl_pos.offset;
+        var mod_pos = ModGetBucket(pos);
+        ctrl_bytes[(int)mod_pos] = h2;
+        if (mod_pos != pos)
+        {
+            ctrl_bytes[(int)pos] = h2;
+        }
+        if (ctrl_pos.group < CtrlGroupSize)
+        {
+            ctrl_bytes[(int)(size + ctrl_pos.offset)] = h2;
+        }
     }
 
     #endregion
 
     #region Grow
 
+    protected bool NeedGrow() => count + CtrlGroupSize / 2 > size;
+
     protected void Grow()
     {
-        if (size == 0) Grow(CtrlGroupSize * 8, true);
+        if (size == 0) Grow(CtrlGroupSize, true);
         // size is a power of 2
         else Grow(size << 1, false);
     }
@@ -591,6 +795,7 @@ public abstract class ASwissTable<T, EH> : ASwissTable, IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void Grow(uint new_size, bool init)
     {
+        var old_size = size;
         var old_ctrl = ctrl;
         var old_slots = slots;
 
@@ -600,16 +805,83 @@ public abstract class ASwissTable<T, EH> : ASwissTable, IDisposable
 
         new_ctrl.AsSpan(0, (int)(new_size + groupSize)).Fill(SlotIsEmpty);
 
-        if (!init)
-        {
-            throw new NotImplementedException("todo");
-        }
-
         size = new_size;
         ctrl = new_ctrl;
         slots = new_slots;
+        version++;
+
+        if (!init)
+        {
+            try
+            {
+                ReInsert(old_ctrl, old_slots, old_size);
+            }
+            catch
+            {
+                size = old_size;
+                ctrl = old_ctrl;
+                slots = old_slots;
+
+                poolCtrl.Return(new_ctrl);
+                poolSlot.Return(new_slots, RuntimeHelpers.IsReferenceOrContainsReferences<T>());
+            }
+        }
+
         poolCtrl.Return(old_ctrl);
         poolSlot.Return(old_slots, RuntimeHelpers.IsReferenceOrContainsReferences<T>());
+    }
+
+    private void ReInsert(byte[] old_ctrl, T[] old_slots, uint old_size)
+    {
+#if NET7_0_OR_GREATER
+#if NET8_0_OR_GREATER
+        if (Vector512.IsHardwareAccelerated)
+        {
+            ReInsert<Vector512<byte>>(old_ctrl, old_slots, old_size);
+            return;
+        }
+#endif
+        if (Vector256.IsHardwareAccelerated)
+        {
+            ReInsert<Vector256<byte>>(old_ctrl, old_slots, old_size);
+            return;
+        }
+        if (Vector128.IsHardwareAccelerated)
+        {
+            ReInsert<Vector128<byte>>(old_ctrl, old_slots, old_size);
+            return;
+        }
+        if (Vector64.IsHardwareAccelerated)
+        {
+            ReInsert<Vector64<byte>>(old_ctrl, old_slots, old_size);
+            return;
+        }
+#endif
+        {
+            ReInsert<ulong>(old_ctrl, old_slots, old_size);
+            return;
+        }
+    }
+
+    private void ReInsert<V>(byte[] old_ctrl, T[] old_slots, uint old_size)
+    {
+        var slots = Slots;
+        foreach (var old_index in new FullBucketsIndicesSpanEnumerator<V>(old_ctrl.AsSpan(0, (int)old_size)))
+        {
+            ref var old_slot = ref old_slots[old_index];
+            
+            var hash = eh.CalcHash(in old_slot);
+            var h1 = GetH1(hash);
+            var h2 = GetH2(hash);
+
+            // ReSharper disable once RedundantAssignment
+            var success = TryGetInsertSlot<V>(h1, out var insert_slot, out var ctrl_pos);
+            Debug.Assert(success);
+
+            slots[(int)insert_slot] = old_slot;
+            WriteCtrl(ctrl_pos, h2);
+            version++;
+        }
     }
 
     #endregion
@@ -618,7 +890,6 @@ public abstract class ASwissTable<T, EH> : ASwissTable, IDisposable
 
     public void Clear()
     {
-        // todo narrow
         Ctrl.Fill(SlotIsEmpty);
         if (RuntimeHelpers.IsReferenceOrContainsReferences<T>()) Slots.Clear();
     }
