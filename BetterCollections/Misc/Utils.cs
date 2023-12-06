@@ -2,6 +2,7 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 #if NETCOREAPP3_0_OR_GREATER
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.Arm;
@@ -10,7 +11,7 @@ using System.Runtime.Intrinsics.X86;
 
 namespace BetterCollections.Misc;
 
-public static class Utils
+public static partial class Utils
 {
     /// <summary>
     /// Create a ulong where all bytes are the specified value
@@ -120,6 +121,21 @@ public static class Utils
         }
 
         return TrailingZeroCount(lo);
+#endif
+    }
+
+#if NET8_0_OR_GREATER
+    [GeneratedRegex(".{8}(?!$)")]
+    private static partial Regex SplitBytes();
+#endif
+
+    public static string ToBinaryString(this ulong value)
+    {
+        var a = Convert.ToString((long)value, 2).PadLeft(64, '0');
+#if NET8_0_OR_GREATER
+        return SplitBytes().Replace(a, "$0_");
+#else
+        return Regex.Replace(a, ".{8}(?!$)", "$0_");
 #endif
     }
 }

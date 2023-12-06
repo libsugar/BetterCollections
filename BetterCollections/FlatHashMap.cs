@@ -4,36 +4,64 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using BetterCollections.Buffers;
+using BetterCollections.Cryptography;
 using BetterCollections.Exceptions;
 using BetterCollections.Misc;
 
 namespace BetterCollections;
 
-public class FlatHashMap<TKey, TValue> : ASwissTable<(TKey Key, TValue Value), EqHash<TKey, TValue>>,
-    IDictionary<TKey, TValue>, ICollection<(TKey Key, TValue Value)>
+public class FlatHashMap<TKey, TValue> : FlatHashMap<TKey, TValue, AHasher>
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public FlatHashMap(ArrayPoolFactory poolFactory, int cap, IEqualityComparer<TKey>? comparer) : base(poolFactory,
-        new EqHash<TKey, TValue>(comparer), cap) { }
+    public FlatHashMap(ArrayPoolFactory poolFactory, int cap, IEqualityComparer<TKey>? comparer)
+        : base(new AHasher(), poolFactory, cap, comparer) { }
 
     // ReSharper disable once IntroduceOptionalParameters.Global
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public FlatHashMap(ArrayPoolFactory poolFactory, int cap) : this(poolFactory, cap, null) { }
+    public FlatHashMap(ArrayPoolFactory poolFactory, int cap) : base(new AHasher(), poolFactory, cap) { }
 
     // ReSharper disable once IntroduceOptionalParameters.Global
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public FlatHashMap(ArrayPoolFactory poolFactory) : this(poolFactory, 0, null) { }
+    public FlatHashMap(ArrayPoolFactory poolFactory) : base(new AHasher(), poolFactory) { }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public FlatHashMap(int cap, IEqualityComparer<TKey>? comparer) :
-        this(ArrayPoolFactory.DirectAllocation, cap, comparer) { }
+        base(new AHasher(), cap, comparer) { }
 
     // ReSharper disable once IntroduceOptionalParameters.Global
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public FlatHashMap(int cap) : this(cap, null) { }
+    public FlatHashMap(int cap) : base(new AHasher(), cap) { }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public FlatHashMap() : this(0, null) { }
+    public FlatHashMap() : base(new AHasher()) { }
+}
+
+public class FlatHashMap<TKey, TValue, H> : ASwissTable<(TKey Key, TValue Value), EqHash<TKey, TValue>, H>,
+    IDictionary<TKey, TValue>, ICollection<(TKey Key, TValue Value)> where H : IHasher
+{
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public FlatHashMap(H hasher, ArrayPoolFactory poolFactory, int cap, IEqualityComparer<TKey>? comparer) : base(
+        poolFactory,
+        new EqHash<TKey, TValue>(comparer), hasher, cap) { }
+
+    // ReSharper disable once IntroduceOptionalParameters.Global
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public FlatHashMap(H hasher, ArrayPoolFactory poolFactory, int cap) : this(hasher, poolFactory, cap, null) { }
+
+    // ReSharper disable once IntroduceOptionalParameters.Global
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public FlatHashMap(H hasher, ArrayPoolFactory poolFactory) : this(hasher, poolFactory, 0, null) { }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public FlatHashMap(H hasher, int cap, IEqualityComparer<TKey>? comparer) :
+        this(hasher, ArrayPoolFactory.DirectAllocation, cap, comparer) { }
+
+    // ReSharper disable once IntroduceOptionalParameters.Global
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public FlatHashMap(H hasher, int cap) : this(hasher, cap, null) { }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public FlatHashMap(H hasher) : this(hasher, 0, null) { }
 
     public bool IsReadOnly => false;
 

@@ -18,15 +18,8 @@
     Reimplemented `List<T>`, can unsafely retrieve the internal Array or as Span, Memory
     *todo* methods same to `List<T>`
   - `FlatHashMap<K, V>`  
-    HashMap with simd accelerated query, using [SwissTables](https://abseil.io/blog/20180927-swisstables) algorithm
-    - .net8 +  
-      - Vector512
-    - .net7 +  
-      - Vector256
-      - Vector128
-      - Vector64
-    - other  
-      - soft
+    HashMap with simd accelerated query, using [SwissTables](https://abseil.io/blog/20180927-swisstables) algorithm  
+    simd support see [Simd Support](#Simd-Support)
 - Sync / Concurrent / Thread safe
   - `OnceInit<T>`  
     Similar to `Lazy<T>`, but provides init function when getting  
@@ -42,3 +35,18 @@
     A **fat reference** *(`object + offset`)* that can be safely put on the **heap**, not a ref struct
   - `MemoryEx`
     - Provides `GetEnumerator` for `Memory<T>` `ReadOnlyMemory<T>`
+    
+#### Simd Support
+  - .net8 +
+    - Vector512
+  - .net7 +
+    - Vector256
+    - Vector128
+    - Vector64
+    - X86.Aes
+    - Arm.Aes
+  - other
+    - soft  
+
+.Net 6 does not fully support simd, so .net6 does not have simd support  
+**Don’t use .net6, use .net8+**

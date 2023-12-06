@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using BetterCollections.Buffers;
+using BetterCollections.Cryptography;
 #if NET7_0_OR_GREATER
 using System.Runtime.Intrinsics;
 #endif
@@ -29,10 +30,10 @@ public abstract partial class ASwissTable
     #region H1 H2
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    protected static uint GetH1(int hashCode) => (uint)hashCode & ~(uint)SlotValueMask;
+    protected static ulong GetH1(ulong hashCode) => hashCode & ~(ulong)SlotValueMask;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    protected static byte GetH2(int hashCode) => (byte)((uint)hashCode & SlotValueMask);
+    protected static byte GetH2(ulong hashCode) => (byte)(hashCode & SlotValueMask);
 
     #endregion
 
@@ -136,18 +137,7 @@ public abstract partial class ASwissTable
 
         #region ToString
 
-        private string BaseToString() => Convert.ToString((long)bits, 2).PadLeft(64, '0');
-
-#if NET8_0_OR_GREATER
-        [GeneratedRegex(".{8}(?!$)")]
-        private static partial Regex SplitBytes();
-
-        public override string ToString() =>
-            SplitBytes().Replace(BaseToString(), "$0_");
-#else
-        public override string ToString() =>
-            Regex.Replace(BaseToString(), ".{8}(?!$)", "$0_");
-#endif
+        public override string ToString() => bits.ToBinaryString();
 
         #endregion
 
@@ -218,6 +208,12 @@ public abstract partial class ASwissTable
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected static uint ModGetBucket(uint v, uint size) => v & (size - 1);
+
+    /// <summary>
+    /// Same to <c>v % size</c> because size must be power of two
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    protected static uint ModGetBucket(ulong v, uint size) => (uint)(v & (size - 1));
 
     #endregion
 
@@ -459,8 +455,8 @@ public abstract partial class ASwissTable
     #endregion
 }
 
-public abstract class ASwissTable<T, EH> : ASwissTable, IDisposable
-    where EH : IEqHash<T>
+public abstract class ASwissTable<T, EH, H> : ASwissTable, IDisposable
+    where EH : IEqHash<T> where H : IHasher
 {
     #region Fields
 
@@ -488,6 +484,7 @@ public abstract class ASwissTable<T, EH> : ASwissTable, IDisposable
     protected readonly ArrayPool<byte> poolCtrl;
     protected readonly ArrayPool<T> poolSlot;
     protected readonly EH eh;
+    protected readonly H hasher;
 
     #endregion
 
@@ -522,13 +519,14 @@ public abstract class ASwissTable<T, EH> : ASwissTable, IDisposable
 
     #region Ctor
 
-    protected ASwissTable(ArrayPoolFactory poolFactory, EH eh, int cap)
+    protected ASwissTable(ArrayPoolFactory poolFactory, EH eh, H hasher, int cap)
     {
         if (cap < 0) throw new ArgumentOutOfRangeException(nameof(cap), "capacity must > 0");
         // ReSharper disable once VirtualMemberCallInConstructor
         HandleMustReturn(poolFactory.MustReturn);
         count = 0;
         this.eh = eh;
+        this.hasher = hasher;
         poolCtrl = poolFactory.GetMayUninitialized<byte>();
         poolSlot = poolFactory.Get<T>();
         var groupSize = CtrlGroupSize;
@@ -549,18 +547,24 @@ public abstract class ASwissTable<T, EH> : ASwissTable, IDisposable
 
     #endregion
 
+    #region Hash
+
+    protected ulong Hash(ulong value) => hasher.Hash(value);
+
+    #endregion
+
     #region ModGetBucket
 
     /// <inheritdoc cref="ASwissTable.ModGetBucket(uint,uint)"/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    protected uint ModGetBucket(uint v) => ModGetBucket(v, size);
+    protected uint ModGetBucket(ulong v) => ModGetBucket(v, size);
 
     #endregion
 
     #region ProbeSeq
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    protected ProbeSeq H1StartProbe(uint h1) => new(ModGetBucket(h1));
+    protected ProbeSeq H1StartProbe(ulong h1) => new(ModGetBucket(h1));
 
     #endregion
 
@@ -571,7 +575,7 @@ public abstract class ASwissTable<T, EH> : ASwissTable, IDisposable
         Unsafe.SkipInit(out slot_index);
         if (size == 0) return false;
 
-        var hash = keh.CalcHash(in eh, in key);
+        var hash = Hash((ulong)keh.CalcHash(in eh, in key));
         var h1 = GetH1(hash);
         var h2 = GetH2(hash);
 
@@ -591,7 +595,7 @@ public abstract class ASwissTable<T, EH> : ASwissTable, IDisposable
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private bool TryFind<V, K, KEH>(in K key, in KEH keh, uint h1, byte h2, out uint slot_index)
+    private bool TryFind<V, K, KEH>(in K key, in KEH keh, ulong h1, byte h2, out uint slot_index)
         where KEH : IEqHashKey<T, K, EH>
     {
         Unsafe.SkipInit(out slot_index);
@@ -624,7 +628,7 @@ public abstract class ASwissTable<T, EH> : ASwissTable, IDisposable
 
     protected bool TryInsert(in T value, InsertBehavior behavior)
     {
-        var hash = eh.CalcHash(in value);
+        var hash = Hash((ulong)eh.CalcHash(in value));
         var h1 = GetH1(hash);
         var h2 = GetH2(hash);
 
@@ -644,7 +648,7 @@ public abstract class ASwissTable<T, EH> : ASwissTable, IDisposable
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private bool TryInsert<V>(in T value, uint h1, byte h2, InsertBehavior behavior)
+    private bool TryInsert<V>(in T value, ulong h1, byte h2, InsertBehavior behavior)
     {
         if (size == 0 || NeedGrow()) goto grow;
         var r = TryGetInsertSlot<V>(in value, h1, h2, behavior, out var insert_slot, out var ctrl_pos);
@@ -684,7 +688,7 @@ public abstract class ASwissTable<T, EH> : ASwissTable, IDisposable
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private SlotResult TryGetInsertSlot<V>(in T value, uint h1, byte h2, InsertBehavior behavior,
+    private SlotResult TryGetInsertSlot<V>(in T value, ulong h1, byte h2, InsertBehavior behavior,
         out uint insert_slot, out CtrlPos group_pos)
     {
         Unsafe.SkipInit(out insert_slot);
@@ -725,7 +729,7 @@ public abstract class ASwissTable<T, EH> : ASwissTable, IDisposable
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private bool TryGetInsertSlot<V>(uint h1, out uint insert_slot, out CtrlPos ctrl_pos)
+    private bool TryGetInsertSlot<V>(ulong h1, out uint insert_slot, out CtrlPos ctrl_pos)
     {
         Unsafe.SkipInit(out insert_slot);
         Unsafe.SkipInit(out ctrl_pos);
@@ -859,7 +863,6 @@ public abstract class ASwissTable<T, EH> : ASwissTable, IDisposable
 #endif
         {
             ReInsert<ulong>(old_ctrl, old_slots, old_size);
-            return;
         }
     }
 
@@ -869,8 +872,8 @@ public abstract class ASwissTable<T, EH> : ASwissTable, IDisposable
         foreach (var old_index in new FullBucketsIndicesSpanEnumerator<V>(old_ctrl.AsSpan(0, (int)old_size)))
         {
             ref var old_slot = ref old_slots[old_index];
-            
-            var hash = eh.CalcHash(in old_slot);
+
+            var hash = Hash((ulong)eh.CalcHash(in old_slot));
             var h1 = GetH1(hash);
             var h2 = GetH2(hash);
 
@@ -890,6 +893,7 @@ public abstract class ASwissTable<T, EH> : ASwissTable, IDisposable
 
     public void Clear()
     {
+        count = 0;
         Ctrl.Fill(SlotIsEmpty);
         if (RuntimeHelpers.IsReferenceOrContainsReferences<T>()) Slots.Clear();
     }
