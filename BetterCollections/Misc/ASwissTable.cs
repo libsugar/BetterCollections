@@ -25,12 +25,14 @@ public abstract partial class ASwissTable
     protected const byte SlotIsDeleted = 0b1000_0000;
     protected const byte SlotValueMask = 0b0111_1111;
 
+    protected const uint DefaultCapacity = 4;
+
     #endregion
 
     #region H1 H2
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    protected static ulong GetH1(ulong hashCode) => hashCode & ~(ulong)SlotValueMask;
+    protected static ulong GetH1(ulong hashCode) => hashCode >> 7;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected static byte GetH2(ulong hashCode) => (byte)(hashCode & SlotValueMask);
@@ -39,12 +41,14 @@ public abstract partial class ASwissTable
 
     #region CtrlPos
 
+    [method: MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected record struct CtrlPos(uint group, uint offset);
 
     #endregion
 
     #region MatchBits
 
+    [method: MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected readonly partial struct MatchBits(ulong bits, bool soft = false) : IEquatable<MatchBits>
     {
         #region Consts
@@ -143,14 +147,19 @@ public abstract partial class ASwissTable
 
         #region Equals
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool Equals(MatchBits other) => bits == other.bits;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public override bool Equals(object? obj) => obj is MatchBits other && Equals(other);
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public override int GetHashCode() => bits.GetHashCode();
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool operator ==(MatchBits left, MatchBits right) => left.Equals(right);
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool operator !=(MatchBits left, MatchBits right) => !left.Equals(right);
 
         #endregion
@@ -162,6 +171,7 @@ public abstract partial class ASwissTable
 
     public static Type CtrlGroupType
     {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get
         {
 #if NET7_0_OR_GREATER
@@ -201,6 +211,36 @@ public abstract partial class ASwissTable
 
     #endregion
 
+    #region Cap / Growth
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    protected static uint CeilCap(uint cap)
+    {
+        if (cap == 0) return 0;
+        var groupSize = CtrlGroupSize;
+#if NET7_0_OR_GREATER
+        if (uint.IsPow2(cap)) return cap;
+#else
+        if (Utils.IsPow2(cap)) return cap;
+#endif
+        return cap switch
+        {
+            < 4 => 4,
+            < 8 => 8,
+            _ => cap.CeilBinary(groupSize)
+        };
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    protected static uint MakeGrowth(uint slots_size)
+    {
+        if (slots_size == 0) return 0;
+        if (slots_size <= 8) return slots_size - 1;
+        return slots_size / 8 * 7;
+    }
+
+    #endregion
+
     #region ModGetBucket
 
     /// <summary>
@@ -219,19 +259,20 @@ public abstract partial class ASwissTable
 
     #region ProbeSeq
 
+    [method: MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected struct ProbeSeq(uint pos, uint stride = 0)
     {
         public uint pos = pos;
         public uint stride = stride;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void MoveNext(uint size)
+        public void MoveNext(uint slots_size)
         {
-            Debug.Assert(stride < size);
+            Debug.Assert(stride < slots_size);
 
             stride += CtrlGroupSize;
             pos += stride;
-            pos = ModGetBucket(pos, size);
+            pos = ModGetBucket(pos, slots_size);
         }
     }
 
@@ -406,12 +447,12 @@ public abstract partial class ASwissTable
 
     #region FullBucketsIndicesSpanEnumerator
 
-    protected ref struct FullBucketsIndicesSpanEnumerator<V>(Span<byte> ctrl)
+    [method: MethodImpl(MethodImplOptions.AggressiveInlining)]
+    protected ref struct FullBucketsIndicesSpanEnumerator<V>(ReadOnlySpan<byte> ctrl, uint slots_size, uint group_size)
     {
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public FullBucketsIndicesSpanEnumerator<V> GetEnumerator() => this;
 
-        private readonly Span<byte> ctrl = ctrl;
+        private readonly ReadOnlySpan<byte> ctrl = ctrl;
         private uint index = 0;
         private MatchBits match = LoadMatch(ctrl, 0);
 
@@ -427,7 +468,7 @@ public abstract partial class ASwissTable
         private MatchBits LoadMatch() => LoadMatch(ctrl, index);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static MatchBits LoadMatch(Span<byte> ctrl, uint index)
+        private static MatchBits LoadMatch(ReadOnlySpan<byte> ctrl, uint index)
         {
             LoadGroup<V>(in ctrl[(int)index], out var group);
             return MatchValue(ref group);
@@ -440,16 +481,121 @@ public abstract partial class ASwissTable
             {
                 if (match)
                 {
-                    Current = index + match.Offset;
+                    var pos = index + match.Offset;
+                    if (pos >= slots_size) return false;
+                    Current = pos;
                     match = match.Next;
                     return true;
                 }
-                if (index >= ctrl.Length) return false;
-                index += CtrlGroupSize;
-                if (index >= ctrl.Length) return false;
-                LoadMatch();
+                if (index >= slots_size) return false;
+                index += group_size;
+                if (index >= slots_size) return false;
+                match = LoadMatch();
             }
         }
+    }
+
+    #endregion
+
+    #region FullBucketsIndicesMemoryEnumerator
+
+    [method: MethodImpl(MethodImplOptions.AggressiveInlining)]
+    protected struct FullBucketsIndicesMemoryEnumerator(ReadOnlyMemory<byte> ctrl, uint slots_size, uint group_size)
+        : IEnumerable<uint>, IEnumerator<uint>
+    {
+        private uint index = 0;
+        private MatchBits match = LoadMatch(ctrl.Span, 0);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public FullBucketsIndicesMemoryEnumerator GetEnumerator() => this;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        IEnumerator<uint> IEnumerable<uint>.GetEnumerator() => GetEnumerator();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private MatchBits LoadMatch() => LoadMatch(ctrl.Span, index);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static MatchBits LoadMatch(ReadOnlySpan<byte> ctrl, uint index)
+        {
+#if NET7_0_OR_GREATER
+#if NET8_0_OR_GREATER
+            if (Vector512.IsHardwareAccelerated)
+            {
+                return LoadMatch<Vector512<byte>>(ctrl, index);
+            }
+#endif
+            if (Vector256.IsHardwareAccelerated)
+            {
+                return LoadMatch<Vector256<byte>>(ctrl, index);
+            }
+            if (Vector128.IsHardwareAccelerated)
+            {
+                return LoadMatch<Vector128<byte>>(ctrl, index);
+            }
+            if (Vector64.IsHardwareAccelerated)
+            {
+                return LoadMatch<Vector64<byte>>(ctrl, index);
+            }
+#endif
+            {
+                return LoadMatch<ulong>(ctrl, index);
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static MatchBits LoadMatch<V>(ReadOnlySpan<byte> ctrl, uint index)
+        {
+            LoadGroup<V>(in ctrl[(int)index], out var group);
+            return MatchValue(ref group);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool MoveNext()
+        {
+            for (;;)
+            {
+                if (match)
+                {
+                    var pos = index + match.Offset;
+                    if (pos >= slots_size) return false;
+                    Current = pos;
+                    match = match.Next;
+                    return true;
+                }
+                if (index >= slots_size) return false;
+                index += group_size;
+                if (index >= slots_size) return false;
+                match = LoadMatch();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Reset()
+        {
+            index = 0;
+            match = LoadMatch(ctrl.Span, 0);
+        }
+
+        public uint Current
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get;
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private set;
+        }
+
+        object IEnumerator.Current
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => Current;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Dispose() { }
     }
 
     #endregion
@@ -474,42 +620,72 @@ public abstract class ASwissTable<T, EH, H> : ASwissTable, IDisposable
     /// The actual array size used, because the array is allocated from the pool, the array size may be larger than the used size
     /// <para><b>Must be power of two</b></para>
     /// </summary>
-    private uint size;
+    private uint ctrl_size;
+    /// <summary>
+    /// The actual array size used, because the array is allocated from the pool, the array size may be larger than the used size
+    /// <para><b>Must be power of two</b></para>
+    /// </summary>
+    private uint slots_size;
     /// <summary>
     /// How many elements are stored
     /// </summary>
     private int count;
+    /// <summary>
+    /// Mark when growth is needed
+    /// </summary>
+    private uint growth_count;
+    /// <summary>
+    /// Used to check if there are concurrent calls
+    /// </summary>
     private int version;
 
+    protected readonly H hasher;
+    protected readonly EH eh;
     protected readonly ArrayPool<byte> poolCtrl;
     protected readonly ArrayPool<T> poolSlot;
-    protected readonly EH eh;
-    protected readonly H hasher;
 
     #endregion
 
     #region Getters
 
-    /// <summary>
-    /// How many elements are stored
-    /// </summary>
+    /// <inheritdoc cref="count"/>
     public int Count
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get => count;
     }
 
-    protected int Version => version;
+    /// <inheritdoc cref="version"/>
+    protected int Version
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => version;
+    }
 
+    /// <inheritdoc cref="ctrl"/>
     protected Span<byte> Ctrl
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => size == 0 ? default : ctrl.AsSpan(0, (int)(size + CtrlGroupSize));
+        get => ctrl_size == 0 ? default : ctrl.AsSpan(0, (int)(ctrl_size + CtrlGroupSize));
     }
+    /// <inheritdoc cref="slots"/>
     protected Span<T> Slots
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => size == 0 ? default : slots.AsSpan(0, (int)size);
+        get => slots_size == 0 ? default : slots.AsSpan(0, (int)slots_size);
+    }
+
+    /// <inheritdoc cref="ctrl"/>
+    protected Memory<byte> CtrlMemory
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => ctrl_size == 0 ? default : ctrl.AsMemory(0, (int)(ctrl_size + CtrlGroupSize));
+    }
+    /// <inheritdoc cref="slots"/>
+    protected Memory<T> SlotsMemory
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => slots_size == 0 ? default : slots.AsMemory(0, (int)slots_size);
     }
 
     protected byte[] BaseUnsafeGetCtrl() => ctrl;
@@ -530,9 +706,11 @@ public abstract class ASwissTable<T, EH, H> : ASwissTable, IDisposable
         poolCtrl = poolFactory.GetMayUninitialized<byte>();
         poolSlot = poolFactory.Get<T>();
         var groupSize = CtrlGroupSize;
-        size = cap == 0 ? 0 : ((uint)cap).CeilBinary(groupSize);
-        ctrl = poolCtrl.Rent((int)(size == 0 ? 0 : size + groupSize));
-        slots = poolSlot.Rent((int)size);
+        ctrl_size = cap == 0 ? 0 : ((uint)cap).CeilBinary(groupSize);
+        slots_size = CeilCap((uint)cap);
+        growth_count = MakeGrowth(slots_size);
+        ctrl = poolCtrl.Rent((int)(ctrl_size == 0 ? 0 : ctrl_size + groupSize));
+        slots = poolSlot.Rent((int)slots_size);
         Ctrl.Fill(SlotIsEmpty);
     }
 
@@ -549,7 +727,15 @@ public abstract class ASwissTable<T, EH, H> : ASwissTable, IDisposable
 
     #region Hash
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected ulong Hash(ulong value) => hasher.Hash(value);
+
+    #endregion
+
+    #region Version
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    protected void VersionPlus() => version = unchecked(version + 1);
 
     #endregion
 
@@ -557,7 +743,7 @@ public abstract class ASwissTable<T, EH, H> : ASwissTable, IDisposable
 
     /// <inheritdoc cref="ASwissTable.ModGetBucket(uint,uint)"/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    protected uint ModGetBucket(ulong v) => ModGetBucket(v, size);
+    protected uint ModGetBucket(ulong v) => ModGetBucket(v, slots_size);
 
     #endregion
 
@@ -573,7 +759,7 @@ public abstract class ASwissTable<T, EH, H> : ASwissTable, IDisposable
     protected bool TryFind<K, KEH>(in K key, in KEH keh, out uint slot_index) where KEH : IEqHashKey<T, K, EH>
     {
         Unsafe.SkipInit(out slot_index);
-        if (size == 0) return false;
+        if (slots_size == 0) return false;
 
         var hash = Hash((ulong)keh.CalcHash(in eh, in key));
         var h1 = GetH1(hash);
@@ -599,7 +785,7 @@ public abstract class ASwissTable<T, EH, H> : ASwissTable, IDisposable
         where KEH : IEqHashKey<T, K, EH>
     {
         Unsafe.SkipInit(out slot_index);
-        var size = this.size;
+        var size = slots_size;
         if (size == 0 || count == 0) return false;
 
         var ctrl_bytes = Ctrl;
@@ -650,7 +836,7 @@ public abstract class ASwissTable<T, EH, H> : ASwissTable, IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private bool TryInsert<V>(in T value, ulong h1, byte h2, InsertBehavior behavior)
     {
-        if (size == 0 || NeedGrow()) goto grow;
+        if (slots_size == 0 || ShouldGrow) goto grow;
         var r = TryGetInsertSlot<V>(in value, h1, h2, behavior, out var insert_slot, out var ctrl_pos);
         switch (r)
         {
@@ -676,7 +862,7 @@ public abstract class ASwissTable<T, EH, H> : ASwissTable, IDisposable
         slots[insert_slot] = value;
         WriteCtrl(ctrl_pos, h2);
         count++;
-        version = unchecked(version + 1);
+        VersionPlus();
         return true;
     }
 
@@ -693,13 +879,13 @@ public abstract class ASwissTable<T, EH, H> : ASwissTable, IDisposable
     {
         Unsafe.SkipInit(out insert_slot);
         Unsafe.SkipInit(out group_pos);
-        var size = this.size;
-        if (size == 0) return SlotResult.NeedGrow;
+        var slots_size = this.slots_size;
+        if (slots_size == 0) return SlotResult.NeedGrow;
 
         var ctrl_bytes = Ctrl;
         var slots = Slots;
 
-        for (var prop = H1StartProbe(h1);; prop.MoveNext(size))
+        for (var prop = H1StartProbe(h1);; prop.MoveNext(slots_size))
         {
             LoadGroup<V>(in ctrl_bytes[(int)prop.pos], out var group);
 
@@ -733,12 +919,12 @@ public abstract class ASwissTable<T, EH, H> : ASwissTable, IDisposable
     {
         Unsafe.SkipInit(out insert_slot);
         Unsafe.SkipInit(out ctrl_pos);
-        var size = this.size;
-        if (size == 0) return false;
+        var slots_size = this.slots_size;
+        if (slots_size == 0) return false;
 
         var ctrl_bytes = Ctrl;
 
-        for (var prop = H1StartProbe(h1);; prop.MoveNext(size))
+        for (var prop = H1StartProbe(h1);; prop.MoveNext(slots_size))
         {
             LoadGroup<V>(in ctrl_bytes[(int)prop.pos], out var group);
 
@@ -768,7 +954,7 @@ public abstract class ASwissTable<T, EH, H> : ASwissTable, IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void WriteCtrl(CtrlPos ctrl_pos, byte h2)
     {
-        var size = this.size;
+        var size = this.slots_size;
         var ctrl_bytes = Ctrl;
         var pos = ctrl_pos.group + ctrl_pos.offset;
         var mod_pos = ModGetBucket(pos);
@@ -777,9 +963,9 @@ public abstract class ASwissTable<T, EH, H> : ASwissTable, IDisposable
         {
             ctrl_bytes[(int)pos] = h2;
         }
-        if (ctrl_pos.group < CtrlGroupSize)
+        if (size < CtrlGroupSize || mod_pos < CtrlGroupSize)
         {
-            ctrl_bytes[(int)(size + ctrl_pos.offset)] = h2;
+            ctrl_bytes[(int)(size + mod_pos)] = h2;
         }
     }
 
@@ -787,91 +973,138 @@ public abstract class ASwissTable<T, EH, H> : ASwissTable, IDisposable
 
     #region Grow
 
-    protected bool NeedGrow() => count + CtrlGroupSize / 2 > size;
+    protected bool ShouldGrow
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => count >= growth_count;
+    }
+
 
     protected void Grow()
     {
-        if (size == 0) Grow(CtrlGroupSize, true);
+        if (slots_size == 0) Grow(DefaultCapacity, true);
         // size is a power of 2
-        else Grow(size << 1, false);
+        else Grow(slots_size << 1, false);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void Grow(uint new_size, bool init)
+    private void Grow(uint new_slots_size, bool init)
     {
-        var old_size = size;
+        var old_slots_size = slots_size;
+        var old_ctrl_size = ctrl_size;
         var old_ctrl = ctrl;
         var old_slots = slots;
+        var old_growth_count = growth_count;
 
-        var groupSize = CtrlGroupSize;
-        var new_ctrl = poolCtrl.Rent((int)(new_size + groupSize));
-        var new_slots = poolSlot.Rent((int)new_size);
+        var group_size = CtrlGroupSize;
 
-        new_ctrl.AsSpan(0, (int)(new_size + groupSize)).Fill(SlotIsEmpty);
+        var new_ctrl_size = new_slots_size.CeilBinary(group_size);
+        var new_ctrl_padded_size = new_ctrl_size + group_size;
 
-        size = new_size;
+        var new_growth_count = MakeGrowth(new_slots_size);
+
+        var need_re_alloc_ctrl = init || new_ctrl_size != old_ctrl_size || new_ctrl_size != group_size;
+
+        var new_ctrl = need_re_alloc_ctrl ? poolCtrl.Rent((int)new_ctrl_padded_size) : old_ctrl;
+        var new_slots = poolSlot.Rent((int)new_slots_size);
+
+        if (need_re_alloc_ctrl)
+            new_ctrl.AsSpan().Fill(SlotIsEmpty);
+
+        slots_size = new_slots_size;
+        ctrl_size = new_ctrl_size;
         ctrl = new_ctrl;
         slots = new_slots;
-        version++;
+        growth_count = new_growth_count;
+        VersionPlus();
 
         if (!init)
         {
             try
             {
-                ReInsert(old_ctrl, old_slots, old_size);
+                if (need_re_alloc_ctrl)
+                {
+                    ReInsert(old_ctrl.AsSpan(0, (int)old_ctrl_size), old_slots, old_slots_size, group_size);
+                }
+                else
+                {
+                    var new_ctrl_tmp = old_ctrl.AsSpan();
+                    Span<byte> old_ctrl_tmp = stackalloc byte[new_ctrl_tmp.Length];
+                    new_ctrl_tmp.CopyTo(old_ctrl_tmp);
+                    new_ctrl_tmp.Fill(SlotIsEmpty);
+
+                    try
+                    {
+                        ReInsert(old_ctrl_tmp[..(int)old_ctrl_size], old_slots, old_slots_size, group_size);
+                    }
+                    catch
+                    {
+                        old_ctrl_tmp.CopyTo(new_ctrl_tmp);
+                        throw;
+                    }
+                }
             }
             catch
             {
-                size = old_size;
+                slots_size = old_slots_size;
+                ctrl_size = old_ctrl_size;
                 ctrl = old_ctrl;
                 slots = old_slots;
+                growth_count = old_growth_count;
 
-                poolCtrl.Return(new_ctrl);
+                if (need_re_alloc_ctrl)
+                    poolCtrl.Return(new_ctrl);
                 poolSlot.Return(new_slots, RuntimeHelpers.IsReferenceOrContainsReferences<T>());
+                throw;
             }
         }
 
-        poolCtrl.Return(old_ctrl);
+        if (need_re_alloc_ctrl)
+            poolCtrl.Return(old_ctrl);
         poolSlot.Return(old_slots, RuntimeHelpers.IsReferenceOrContainsReferences<T>());
     }
 
-    private void ReInsert(byte[] old_ctrl, T[] old_slots, uint old_size)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void ReInsert(ReadOnlySpan<byte> old_ctrl, ReadOnlySpan<T> old_slots, uint old_slots_size, uint group_size)
     {
 #if NET7_0_OR_GREATER
 #if NET8_0_OR_GREATER
         if (Vector512.IsHardwareAccelerated)
         {
-            ReInsert<Vector512<byte>>(old_ctrl, old_slots, old_size);
+            ReInsert<Vector512<byte>>(old_ctrl, old_slots, old_slots_size, group_size);
             return;
         }
 #endif
         if (Vector256.IsHardwareAccelerated)
         {
-            ReInsert<Vector256<byte>>(old_ctrl, old_slots, old_size);
+            ReInsert<Vector256<byte>>(old_ctrl, old_slots, old_slots_size, group_size);
             return;
         }
         if (Vector128.IsHardwareAccelerated)
         {
-            ReInsert<Vector128<byte>>(old_ctrl, old_slots, old_size);
+            ReInsert<Vector128<byte>>(old_ctrl, old_slots, old_slots_size, group_size);
             return;
         }
         if (Vector64.IsHardwareAccelerated)
         {
-            ReInsert<Vector64<byte>>(old_ctrl, old_slots, old_size);
+            ReInsert<Vector64<byte>>(old_ctrl, old_slots, old_slots_size, group_size);
             return;
         }
 #endif
         {
-            ReInsert<ulong>(old_ctrl, old_slots, old_size);
+            ReInsert<ulong>(old_ctrl, old_slots, old_slots_size, group_size);
         }
     }
 
-    private void ReInsert<V>(byte[] old_ctrl, T[] old_slots, uint old_size)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void ReInsert<V>(ReadOnlySpan<byte> old_ctrl, ReadOnlySpan<T> old_slots, uint old_slots_size,
+        uint group_size)
     {
         var slots = Slots;
-        foreach (var old_index in new FullBucketsIndicesSpanEnumerator<V>(old_ctrl.AsSpan(0, (int)old_size)))
+        foreach (var old_index in new FullBucketsIndicesSpanEnumerator<V>(
+                     old_ctrl, old_slots_size, group_size))
         {
-            ref var old_slot = ref old_slots[old_index];
+            ref readonly var old_slot = ref old_slots[(int)old_index];
 
             var hash = Hash((ulong)eh.CalcHash(in old_slot));
             var h1 = GetH1(hash);
@@ -883,7 +1116,7 @@ public abstract class ASwissTable<T, EH, H> : ASwissTable, IDisposable
 
             slots[(int)insert_slot] = old_slot;
             WriteCtrl(ctrl_pos, h2);
-            version++;
+            VersionPlus();
         }
     }
 
@@ -897,6 +1130,13 @@ public abstract class ASwissTable<T, EH, H> : ASwissTable, IDisposable
         Ctrl.Fill(SlotIsEmpty);
         if (RuntimeHelpers.IsReferenceOrContainsReferences<T>()) Slots.Clear();
     }
+
+    #endregion
+
+    #region Enumerator
+
+    protected FullBucketsIndicesMemoryEnumerator MakeIndicesEnumerator()
+        => new(CtrlMemory, slots_size, CtrlGroupSize);
 
     #endregion
 

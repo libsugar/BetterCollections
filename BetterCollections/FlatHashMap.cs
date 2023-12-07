@@ -12,55 +12,43 @@ namespace BetterCollections;
 
 public class FlatHashMap<TKey, TValue> : FlatHashMap<TKey, TValue, AHasher>
 {
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public FlatHashMap(ArrayPoolFactory poolFactory, int cap, IEqualityComparer<TKey>? comparer)
         : base(new AHasher(), poolFactory, cap, comparer) { }
 
     // ReSharper disable once IntroduceOptionalParameters.Global
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public FlatHashMap(ArrayPoolFactory poolFactory, int cap) : base(new AHasher(), poolFactory, cap) { }
 
     // ReSharper disable once IntroduceOptionalParameters.Global
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public FlatHashMap(ArrayPoolFactory poolFactory) : base(new AHasher(), poolFactory) { }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public FlatHashMap(int cap, IEqualityComparer<TKey>? comparer) :
         base(new AHasher(), cap, comparer) { }
 
     // ReSharper disable once IntroduceOptionalParameters.Global
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public FlatHashMap(int cap) : base(new AHasher(), cap) { }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public FlatHashMap() : base(new AHasher()) { }
 }
 
 public class FlatHashMap<TKey, TValue, H> : ASwissTable<(TKey Key, TValue Value), EqHash<TKey, TValue>, H>,
-    IDictionary<TKey, TValue>, ICollection<(TKey Key, TValue Value)> where H : IHasher
+    IDictionary<TKey, TValue> where H : IHasher
 {
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public FlatHashMap(H hasher, ArrayPoolFactory poolFactory, int cap, IEqualityComparer<TKey>? comparer) : base(
         poolFactory,
         new EqHash<TKey, TValue>(comparer), hasher, cap) { }
 
     // ReSharper disable once IntroduceOptionalParameters.Global
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public FlatHashMap(H hasher, ArrayPoolFactory poolFactory, int cap) : this(hasher, poolFactory, cap, null) { }
 
     // ReSharper disable once IntroduceOptionalParameters.Global
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public FlatHashMap(H hasher, ArrayPoolFactory poolFactory) : this(hasher, poolFactory, 0, null) { }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public FlatHashMap(H hasher, int cap, IEqualityComparer<TKey>? comparer) :
         this(hasher, ArrayPoolFactory.DirectAllocation, cap, comparer) { }
 
     // ReSharper disable once IntroduceOptionalParameters.Global
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public FlatHashMap(H hasher, int cap) : this(hasher, cap, null) { }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public FlatHashMap(H hasher) : this(hasher, 0, null) { }
 
     public bool IsReadOnly => false;
@@ -76,6 +64,7 @@ public class FlatHashMap<TKey, TValue, H> : ASwissTable<(TKey Key, TValue Value)
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         set
         {
+            // ReSharper disable once RedundantAssignment
             var r = TryInsert((key, value), InsertBehavior.OverwriteIfExisting);
             Debug.Assert(r);
         }
@@ -107,6 +96,7 @@ public class FlatHashMap<TKey, TValue, H> : ASwissTable<(TKey Key, TValue Value)
     public bool ContainsKey(TKey key)
         => TryFind(key, new EqHashKey<TKey, TValue>(), out _);
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Remove(TKey key)
     {
         throw new System.NotImplementedException();
@@ -130,43 +120,210 @@ public class FlatHashMap<TKey, TValue, H> : ASwissTable<(TKey Key, TValue Value)
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Contains((TKey Key, TValue Value) item) => ContainsKey(item.Key);
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void CopyTo(KeyValuePair<TKey, TValue>[] array, int arrayIndex)
     {
-        throw new System.NotImplementedException();
+        foreach (var item in this)
+        {
+            array[arrayIndex] = item;
+            arrayIndex++;
+        }
     }
 
-    public void CopyTo((TKey Key, TValue Value)[] array, int arrayIndex)
-    {
-        throw new NotImplementedException();
-    }
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool Remove((TKey Key, TValue Value) item) => Remove(item.Key);
 
-    public bool Remove((TKey Key, TValue Value) item)
-    {
-        throw new NotImplementedException();
-    }
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool Remove(KeyValuePair<TKey, TValue> item) => Remove(item.Key);
 
-    public bool Remove(KeyValuePair<TKey, TValue> item)
-    {
-        throw new System.NotImplementedException();
-    }
+    public ICollection<TKey> Keys => keysCollection ??= new(this);
+    private KeysCollection? keysCollection;
 
-    public ICollection<TKey> Keys => throw new System.NotImplementedException();
+    public ICollection<TValue> Values => valuesCollection ??= new(this);
+    private ValuesCollection? valuesCollection;
 
-    public ICollection<TValue> Values => throw new System.NotImplementedException();
+    public ICollection<(TKey Key, TValue Value)> Items => tupleCollection ??= new TupleCollection(this);
+    private TupleCollection? tupleCollection;
 
-    public ICollection<(TKey Key, TValue Value)> Items => throw new System.NotImplementedException();
-
-    public ICollection<KeyValuePair<TKey, TValue>> Pairs => throw new System.NotImplementedException();
-
-    IEnumerator<(TKey Key, TValue Value)> IEnumerable<(TKey Key, TValue Value)>.GetEnumerator()
-    {
-        throw new NotImplementedException();
-    }
 
     public IEnumerator<KeyValuePair<TKey, TValue>> GetEnumerator()
+        => new ItemEnumerator<KeyValuePair<TKey, TValue>, KeyValueGetter<TKey, TValue>>(
+            this, new(), MakeIndicesEnumerator());
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+    protected sealed class ItemEnumerator<T, G>(
+        FlatHashMap<TKey, TValue, H> self,
+        G getter,
+        FullBucketsIndicesMemoryEnumerator indices)
+        : IEnumerator<T>
+        where G : IGetter<T, (TKey Key, TValue Value)>
     {
-        throw new System.NotImplementedException();
+        private readonly int version = self.Version;
+
+        object IEnumerator.Current
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => Current!;
+        }
+
+        public T Current
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                if (version != self.Version) throw new UnexpectedConcurrentException();
+                return getter.Get(in self.Slots[(int)indices.Current]);
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool MoveNext() => indices.MoveNext();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Reset() => indices.Reset();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Dispose() => indices.Dispose();
     }
 
-    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    private sealed class TupleCollection(FlatHashMap<TKey, TValue, H> self) : ICollection<(TKey Key, TValue Value)>
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public IEnumerator<(TKey Key, TValue Value)> GetEnumerator()
+            => new ItemEnumerator<(TKey Key, TValue Value), IdentityGetter<(TKey Key, TValue Value)>>(
+                self, new(), self.MakeIndicesEnumerator());
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Add((TKey Key, TValue Value) item) => self.Add(item);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Clear() => self.Clear();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool Contains((TKey Key, TValue Value) item) => self.Contains(item);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void CopyTo((TKey Key, TValue Value)[] array, int arrayIndex)
+        {
+            foreach (var item in this)
+            {
+                array[arrayIndex] = item;
+                arrayIndex++;
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool Remove((TKey Key, TValue Value) item) => self.Remove(item);
+
+        public int Count
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => self.Count;
+        }
+        public bool IsReadOnly
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => self.IsReadOnly;
+        }
+    }
+
+    private sealed class KeysCollection(FlatHashMap<TKey, TValue, H> self) : ICollection<TKey>
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public IEnumerator<TKey> GetEnumerator()
+            => new ItemEnumerator<TKey, KeyGetter<TKey, TValue>>(
+                self, new(), self.MakeIndicesEnumerator());
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Add(TKey item) => throw new NotSupportedException();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Clear() => self.Clear();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool Contains(TKey item) => self.ContainsKey(item);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void CopyTo(TKey[] array, int arrayIndex)
+        {
+            foreach (var key in this)
+            {
+                array[arrayIndex] = key;
+                arrayIndex++;
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool Remove(TKey item) => self.Remove(item);
+
+        public int Count
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => self.Count;
+        }
+        public bool IsReadOnly
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => true;
+        }
+    }
+
+    private sealed class ValuesCollection(FlatHashMap<TKey, TValue, H> self) : ICollection<TValue>
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public IEnumerator<TValue> GetEnumerator()
+            => new ItemEnumerator<TValue, ValueGetter<TKey, TValue>>(
+                self, new(), self.MakeIndicesEnumerator());
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Add(TValue item) => throw new NotSupportedException();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Clear() => self.Clear();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool Contains(TValue item)
+        {
+            foreach (var value in this)
+            {
+                if (EqualityComparer<TValue>.Default.Equals(item, value)) return true;
+            }
+            return false;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void CopyTo(TValue[] array, int arrayIndex)
+        {
+            foreach (var value in this)
+            {
+                array[arrayIndex] = value;
+                arrayIndex++;
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool Remove(TValue item) => throw new NotSupportedException();
+
+        public int Count
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => self.Count;
+        }
+        public bool IsReadOnly
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => true;
+        }
+    }
 }
