@@ -284,163 +284,176 @@ public abstract partial class ASwissTable
     protected static unsafe void LoadGroup<V>(in byte ptr, out V output)
         => LoadGroup((byte*)Unsafe.AsPointer(ref Unsafe.AsRef(in ptr)), out output);
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [MethodImpl(MethodImplOptions.AggressiveInlining | (MethodImplOptions)512)]
     protected static unsafe void LoadGroup<V>(byte* ptr, out V output)
     {
         Unsafe.SkipInit(out output);
 #if NET7_0_OR_GREATER
 #if NET8_0_OR_GREATER
-        if (Vector512.IsHardwareAccelerated)
+        if (typeof(V) == typeof(Vector512<byte>))
         {
             Unsafe.As<V, Vector512<byte>>(ref output) = Vector512.Load(ptr);
             return;
         }
 #endif
-        if (Vector256.IsHardwareAccelerated)
+        if (typeof(V) == typeof(Vector256<byte>))
         {
             Unsafe.As<V, Vector256<byte>>(ref output) = Vector256.Load(ptr);
             return;
         }
-        if (Vector128.IsHardwareAccelerated)
+        if (typeof(V) == typeof(Vector128<byte>))
         {
             Unsafe.As<V, Vector128<byte>>(ref output) = Vector128.Load(ptr);
             return;
         }
-        if (Vector64.IsHardwareAccelerated)
+        if (typeof(V) == typeof(Vector64<byte>))
         {
             Unsafe.As<V, Vector64<byte>>(ref output) = Vector64.Load(ptr);
             return;
         }
 #endif
-        Unsafe.As<V, ulong>(ref output) = Unsafe.ReadUnaligned<ulong>(ptr);
+        if (typeof(V) == typeof(ulong))
+        {
+            Unsafe.As<V, ulong>(ref output) = Unsafe.ReadUnaligned<ulong>(ptr);
+            return;
+        }
+        throw new NotSupportedException();
     }
 
     #endregion
 
     #region MatchH2
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [MethodImpl(MethodImplOptions.AggressiveInlining | (MethodImplOptions)512)]
     protected static MatchBits MatchH2<V>(ref V group, byte h2)
     {
 #if NET7_0_OR_GREATER
 #if NET8_0_OR_GREATER
-        if (Vector512.IsHardwareAccelerated)
+        if (typeof(V) == typeof(Vector512<byte>))
         {
-            return MatchH2(Unsafe.As<V, Vector512<byte>>(ref group), Vector512.Create(h2));
+            return new(MatchH2(in Unsafe.As<V, Vector512<byte>>(ref group), h2));
         }
 #endif
-        if (Vector256.IsHardwareAccelerated)
+        if (typeof(V) == typeof(Vector256<byte>))
         {
-            return MatchH2(Unsafe.As<V, Vector256<byte>>(ref group), Vector256.Create(h2));
+            return new(MatchH2(in Unsafe.As<V, Vector256<byte>>(ref group), h2));
         }
-        if (Vector128.IsHardwareAccelerated)
+        if (typeof(V) == typeof(Vector128<byte>))
         {
-            return MatchH2(Unsafe.As<V, Vector128<byte>>(ref group), Vector128.Create(h2));
+            return new(MatchH2(in Unsafe.As<V, Vector128<byte>>(ref group), h2));
         }
-        if (Vector64.IsHardwareAccelerated)
+        if (typeof(V) == typeof(Vector64<byte>))
         {
-            return MatchH2(Unsafe.As<V, Vector64<byte>>(ref group), Vector64.Create(h2));
+            return new(MatchH2(in Unsafe.As<V, Vector64<byte>>(ref group), h2));
         }
 #endif
+        if (typeof(V) == typeof(ulong))
         {
             return MatchH2(Unsafe.As<V, ulong>(ref group), Utils.CreateULong(h2));
         }
+        throw new NotSupportedException();
     }
 
     #endregion
 
     #region MatchEmpty
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [MethodImpl(MethodImplOptions.AggressiveInlining | (MethodImplOptions)512)]
     protected static MatchBits MatchEmpty<V>(ref V group)
     {
 #if NET7_0_OR_GREATER
 #if NET8_0_OR_GREATER
-        if (Vector512.IsHardwareAccelerated)
+        if (typeof(V) == typeof(Vector512<byte>))
         {
-            return MatchEmpty(Unsafe.As<V, Vector512<byte>>(ref group));
+            return new(MatchEmpty(in Unsafe.As<V, Vector512<byte>>(ref group)));
         }
 #endif
-        if (Vector256.IsHardwareAccelerated)
+        if (typeof(V) == typeof(Vector256<byte>))
         {
-            return MatchEmpty(Unsafe.As<V, Vector256<byte>>(ref group));
+            return new(MatchEmpty(in Unsafe.As<V, Vector256<byte>>(ref group)));
         }
-        if (Vector128.IsHardwareAccelerated)
+        if (typeof(V) == typeof(Vector128<byte>))
         {
-            return MatchEmpty(Unsafe.As<V, Vector128<byte>>(ref group));
+            return new(MatchEmpty(in Unsafe.As<V, Vector128<byte>>(ref group)));
         }
-        if (Vector64.IsHardwareAccelerated)
+        if (typeof(V) == typeof(Vector64<byte>))
         {
-            return MatchEmpty(Unsafe.As<V, Vector64<byte>>(ref group));
+            return new(MatchEmpty(in Unsafe.As<V, Vector64<byte>>(ref group)));
         }
 #endif
+        if (typeof(V) == typeof(ulong))
         {
             return MatchEmpty(Unsafe.As<V, ulong>(ref group));
         }
+        throw new NotSupportedException();
     }
 
     #endregion
 
     #region MatchEmptyOrDelete
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [MethodImpl(MethodImplOptions.AggressiveInlining | (MethodImplOptions)512)]
     protected static MatchBits MatchEmptyOrDelete<V>(ref V group)
     {
 #if NET7_0_OR_GREATER
 #if NET8_0_OR_GREATER
-        if (Vector512.IsHardwareAccelerated)
+        if (typeof(V) == typeof(Vector512<byte>))
         {
-            return MatchEmptyOrDelete(Unsafe.As<V, Vector512<byte>>(ref group));
+            return new(MatchEmptyOrDelete(in Unsafe.As<V, Vector512<byte>>(ref group)));
         }
 #endif
-        if (Vector256.IsHardwareAccelerated)
+        if (typeof(V) == typeof(Vector256<byte>))
         {
-            return MatchEmptyOrDelete(Unsafe.As<V, Vector256<byte>>(ref group));
+            return new(MatchEmptyOrDelete(in Unsafe.As<V, Vector256<byte>>(ref group)));
         }
-        if (Vector128.IsHardwareAccelerated)
+        if (typeof(V) == typeof(Vector128<byte>))
         {
-            return MatchEmptyOrDelete(Unsafe.As<V, Vector128<byte>>(ref group));
+            return new(MatchEmptyOrDelete(in Unsafe.As<V, Vector128<byte>>(ref group)));
         }
-        if (Vector64.IsHardwareAccelerated)
+        if (typeof(V) == typeof(Vector64<byte>))
         {
-            return MatchEmptyOrDelete(Unsafe.As<V, Vector64<byte>>(ref group));
+            return new(MatchEmptyOrDelete(in Unsafe.As<V, Vector64<byte>>(ref group)));
         }
 #endif
+        if (typeof(V) == typeof(ulong))
         {
             return MatchEmptyOrDelete(Unsafe.As<V, ulong>(ref group));
         }
+        throw new NotSupportedException();
     }
 
     #endregion
 
     #region MatchEmptyOrDelete
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [MethodImpl(MethodImplOptions.AggressiveInlining | (MethodImplOptions)512)]
     protected static MatchBits MatchValue<V>(ref V group)
     {
 #if NET7_0_OR_GREATER
 #if NET8_0_OR_GREATER
-        if (Vector512.IsHardwareAccelerated)
+        if (typeof(V) == typeof(Vector512<byte>))
         {
-            return MatchValue(Unsafe.As<V, Vector512<byte>>(ref group));
+            return new(MatchValue(in Unsafe.As<V, Vector512<byte>>(ref group)));
         }
 #endif
-        if (Vector256.IsHardwareAccelerated)
+        if (typeof(V) == typeof(Vector256<byte>))
         {
-            return MatchValue(Unsafe.As<V, Vector256<byte>>(ref group));
+            return new(MatchValue(in Unsafe.As<V, Vector256<byte>>(ref group)));
         }
-        if (Vector128.IsHardwareAccelerated)
+        if (typeof(V) == typeof(Vector128<byte>))
         {
-            return MatchValue(Unsafe.As<V, Vector128<byte>>(ref group));
+            return new(MatchValue(in Unsafe.As<V, Vector128<byte>>(ref group)));
         }
-        if (Vector64.IsHardwareAccelerated)
+        if (typeof(V) == typeof(Vector64<byte>))
         {
-            return MatchValue(Unsafe.As<V, Vector64<byte>>(ref group));
+            return new(MatchValue(in Unsafe.As<V, Vector64<byte>>(ref group)));
         }
 #endif
+        if (typeof(V) == typeof(ulong))
         {
             return MatchValue(Unsafe.As<V, ulong>(ref group));
         }
+        throw new NotSupportedException();
     }
 
     #endregion

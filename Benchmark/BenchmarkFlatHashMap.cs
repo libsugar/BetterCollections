@@ -4,7 +4,6 @@ using BetterCollections;
 namespace Benchmark;
 
 [MemoryDiagnoser]
-[RPlotExporter]
 public class BenchmarkFlatHashMap_Add1000
 {
     [Benchmark]
@@ -31,7 +30,6 @@ public class BenchmarkFlatHashMap_Add1000
 }
 
 [MemoryDiagnoser]
-[RPlotExporter]
 public class BenchmarkFlatHashMap_Get1000
 {
     private FlatHashMap<int, int> flatHashMap = new();
