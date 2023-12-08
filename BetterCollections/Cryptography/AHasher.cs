@@ -59,6 +59,25 @@ public readonly struct AHasher : IHasher
         }
     }
 
+    [ThreadStatic]
+    private static AHasher _thread_current;
+    [ThreadStatic]
+    private static bool _thread_current_has;
+
+    public static AHasher ThreadCurrent
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get
+        {
+            if (!_thread_current_has)
+            {
+                _thread_current = new();
+                _thread_current_has = true;
+            }
+            return _thread_current;
+        }
+    }
+
     public AHasher(ReadOnlySpan<ulong> keys)
     {
         if (keys.Length < 4) throw new ArgumentOutOfRangeException(nameof(keys), "length of keys must >= 4");

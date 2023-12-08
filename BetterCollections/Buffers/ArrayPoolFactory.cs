@@ -3,6 +3,9 @@ using System.Runtime.CompilerServices;
 
 namespace BetterCollections.Buffers;
 
+/// <summary>
+/// This factory is only used to handle different types, please try to cache the array pool
+/// </summary>
 public abstract class ArrayPoolFactory
 {
     public static ArrayPoolFactory Shared { get; } = new SharedArrayPoolFactory();

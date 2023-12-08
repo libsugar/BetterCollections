@@ -1,9 +1,12 @@
 ﻿using BenchmarkDotNet.Attributes;
+using BenchmarkDotNet.Diagnostics.Windows.Configs;
 using BetterCollections;
 
 namespace Benchmark;
 
 [MemoryDiagnoser]
+[JitStatsDiagnoser]
+[DisassemblyDiagnoser]
 public class BenchmarkFlatHashMap_Add1000
 {
     [Benchmark]
@@ -30,6 +33,8 @@ public class BenchmarkFlatHashMap_Add1000
 }
 
 [MemoryDiagnoser]
+[JitStatsDiagnoser]
+[DisassemblyDiagnoser]
 public class BenchmarkFlatHashMap_Get1000
 {
     private FlatHashMap<int, int> flatHashMap = new();

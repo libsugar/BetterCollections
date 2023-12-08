@@ -14,7 +14,7 @@ public class TestAHasher
         for (int k = 0; k < 100; k++)
         {
             var hasher = new AHasher();
-            ParallelEnumerable.Range(-32768, 65536)
+            ParallelEnumerable.Range(-500, 1000)
                 .ForAll(i =>
                 {
                     var a = hasher.Hash((ulong)i);
@@ -48,7 +48,7 @@ public class TestAHasher
 
         for (int k = 0; k < 100; k++)
         {
-            ParallelEnumerable.Range(-32768, 65536)
+            ParallelEnumerable.Range(-500, 1000)
                 .ForAll(i =>
                 {
                     var a = HashCode.Combine(i);

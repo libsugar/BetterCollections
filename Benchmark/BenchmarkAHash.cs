@@ -1,8 +1,12 @@
 ﻿using BenchmarkDotNet.Attributes;
+using BenchmarkDotNet.Diagnostics.Windows.Configs;
 using BetterCollections.Cryptography;
 
 namespace Benchmark;
 
+[MemoryDiagnoser]
+[JitStatsDiagnoser]
+[DisassemblyDiagnoser]
 public class BenchmarkAHash
 {
     private readonly AHasher AHasher = new();

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Buffers.Binary;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -25,6 +26,52 @@ public static partial class Utils
 #else
         var bytes = stackalloc byte[sizeof(ulong)] { v, v, v, v, v, v, v, v };
         return *(ulong*)bytes;
+#endif
+    }
+
+    /// <summary>
+    /// Round up to the nearest power of 2
+    /// </summary>
+    /// <param name="value">must > 0 &amp;&amp; &lt; uint.MaxValue / 2 + 1</param>
+    /// <returns></returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static int CeilPowerOf2(this int value)
+    {
+#if NET7_0_OR_GREATER
+        return 1 << (32 - int.LeadingZeroCount(value - 1));
+#else
+        var v = value;
+        v--;
+        v |= v >> 1;
+        v |= v >> 2;
+        v |= v >> 4;
+        v |= v >> 8;
+        v |= v >> 16;
+        v++;
+        return v;
+#endif
+    }
+
+    /// <summary>
+    /// Round up to the nearest power of 2
+    /// </summary>
+    /// <param name="value">must > 0 &amp;&amp; &lt; uint.MaxValue / 2 + 1</param>
+    /// <returns></returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static uint CeilPowerOf2(this uint value)
+    {
+#if NET7_0_OR_GREATER
+        return 1u << (32 - (int)uint.LeadingZeroCount(value - 1));
+#else
+        var v = value;
+        v--;
+        v |= v >> 1;
+        v |= v >> 2;
+        v |= v >> 4;
+        v |= v >> 8;
+        v |= v >> 16;
+        v++;
+        return v;
 #endif
     }
 
@@ -152,4 +199,18 @@ public static partial class Utils
     /// <param name="value">The value.</param>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool IsPow2(ulong value) => (value & (value - 1)) == 0 && value > 0;
+
+#pragma warning disable CS0649
+    private struct AlignmentHelper<T> where T : unmanaged
+    {
+        public byte Padding;
+        public T Target;
+    }
+#pragma warning restore CS0649
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static int AlignmentOf<T>() where T : unmanaged
+    {
+        return (int)Marshal.OffsetOf<AlignmentHelper<T>>(nameof(AlignmentHelper<T>.Target));
+    }
 }
