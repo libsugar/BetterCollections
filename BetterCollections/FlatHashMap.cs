@@ -97,10 +97,7 @@ public class FlatHashMap<TKey, TValue, H> : ASwissTable<(TKey Key, TValue Value)
         => TryFind(key, new EqHashKey<TKey, TValue>(), out _);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool Remove(TKey key)
-    {
-        throw new System.NotImplementedException();
-    }
+    public bool Remove(TKey key) => TryRemove(in key, new EqHashKey<TKey, TValue>(), out _);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryGetValue(TKey key, out TValue value)

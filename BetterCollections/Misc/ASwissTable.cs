@@ -1135,6 +1135,63 @@ public abstract class ASwissTable<T, EH, H> : ASwissTable, IDisposable
 
     #endregion
 
+    #region Remove
+
+    protected bool TryRemove<K, KEH>(in K key, in KEH keh, out T value) where KEH : IEqHashKey<T, K, EH>
+    {
+        Unsafe.SkipInit(out value);
+        if (slots_size == 0 || count == 0) return false;
+        
+        var hash = Hash((ulong)keh.CalcHash(in eh, in key));
+        var h1 = GetH1(hash);
+        var h2 = GetH2(hash);
+        
+#if NET7_0_OR_GREATER
+#if NET8_0_OR_GREATER
+        if (Vector512.IsHardwareAccelerated)
+            return TryRemove<Vector512<byte>, K, KEH>(in key, in keh, h1, h2, out value);
+#endif
+        if (Vector256.IsHardwareAccelerated)
+            return TryRemove<Vector256<byte>, K, KEH>(in key, in keh, h1, h2, out value);
+        if (Vector128.IsHardwareAccelerated)
+            return TryRemove<Vector128<byte>, K, KEH>(in key, in keh, h1, h2, out value);
+        if (Vector64.IsHardwareAccelerated)
+            return TryRemove<Vector64<byte>, K, KEH>(in key, in keh, h1, h2, out value);
+#endif
+        return TryRemove<ulong, K, KEH>(in key, in keh, h1, h2, out value);
+    }
+    
+    private bool TryRemove<V, K, KEH>(in K key, in KEH keh, ulong h1, byte h2, out T value) where KEH : IEqHashKey<T, K, EH>
+    {
+        Unsafe.SkipInit(out value);
+        var size = slots_size;
+        if (size == 0 || count == 0) return false;
+        
+        var ctrl_bytes = Ctrl;
+        var slots = Slots;
+
+        for (var prop = H1StartProbe(h1);; prop.MoveNext(size))
+        {
+            LoadGroup<V>(in ctrl_bytes[(int)prop.pos], out var group);
+            foreach (var offset in MatchH2(ref group, h2))
+            {
+                var index = ModGetBucket(prop.pos + offset);
+                ref var slot = ref slots[(int)index];
+                if (keh.IsEq(eh, in key, in slot))
+                {
+                    WriteCtrl(new(prop.pos, offset), SlotIsDeleted); // todo check empty
+                    value = slot;
+                    if (RuntimeHelpers.IsReferenceOrContainsReferences<T>())
+                        slot = default!;
+                    return true;
+                }
+            }
+            if (MatchEmpty(ref group)) return false;
+        }
+    }
+
+    #endregion
+
     #region Clear
 
     public void Clear()
