@@ -5,7 +5,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using BetterCollections.Buffers;
 using BetterCollections.Cryptography;
-using BetterCollections.IndirectHashMap_Internal;
 #if NET7_0_OR_GREATER
 using System.Runtime.Intrinsics;
 #endif
@@ -27,8 +26,7 @@ public partial class IndirectHashMap<TKey, TValue>
     #region Fields
 
     private readonly IEqualityComparer<TKey>? comparer;
-    private readonly ArrayPoolFactory poolFactory;
-    private readonly ArrayPool<Meta> poolMetas;
+    private readonly ArrayPool<byte> poolBytes;
     private readonly ArrayPool<Entry> poolEntries;
     private Table table;
     private int count;
@@ -37,13 +35,9 @@ public partial class IndirectHashMap<TKey, TValue>
 
     private struct Table
     {
-        public CtrlArrayPool poolCtrl;
-        public CtrlArray ctrlArray;
-        public Meta[]? metaArray;
+        public byte[]? ctrlArray;
         public Entry[]? entryArray;
-        public int ctrlSizeMinusOne;
         public int slotSizeMinusOne;
-        public int entryIndex;
         public int growthCount;
         public GroupType groupType;
     }
@@ -60,9 +54,8 @@ public partial class IndirectHashMap<TKey, TValue>
     public IndirectHashMap(ArrayPoolFactory poolFactory, int cap = 0, IEqualityComparer<TKey>? comparer = null)
     {
         if (cap < 0) throw new ArgumentOutOfRangeException(nameof(cap), "Capacity must be >= 0");
-        this.poolFactory = poolFactory;
+        poolBytes = poolFactory.GetMayUninitialized<byte>();
         poolEntries = poolFactory.Get<Entry>();
-        poolMetas = poolFactory.GetMayUninitialized<Meta>();
         if (!typeof(TKey).IsValueType) comparer ??= EqualityComparer<TKey>.Default;
         this.comparer = comparer;
         count = 0;
@@ -77,22 +70,43 @@ public partial class IndirectHashMap<TKey, TValue>
 
     #endregion
 
+    #region Group Type
+
+    private enum GroupType
+    {
+        ULong,
+#if NET7_0_OR_GREATER
+        Vector64,
+        Vector128,
+        Vector256,
+#if NET8_0_OR_GREATER
+        Vector512,
+#endif
+#endif
+    }
+
+    #endregion
+
     #region Entry
 
-    private struct Entry(TKey Key, TValue Value)
+    private struct Entry(TKey Key, TValue Value, uint hashCode)
     {
-        public TKey Key = Key;
+        public readonly TKey Key = Key;
         public TValue Value = Value;
+        public readonly uint HashCode = hashCode;
 
-        public override string ToString() => $"Entry({Key}, {Value})";
+        public override string ToString() => $"Entry({Key}, {Value}) {{ HashCode = {HashCode} }}";
     }
 
     #endregion
 
     #region CalcHash
 
+#if NET6_0_OR_GREATER
+    [SkipLocalsInit]
+#endif
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void CalcHash(ref TKey key, out uint h1, out byte h2)
+    private void CalcHash(TKey key, out uint h1, out byte h2)
     {
         var systemHashCode = typeof(TKey).IsValueType && comparer == null
             ? key.GetHashCode()
@@ -102,6 +116,8 @@ public partial class IndirectHashMap<TKey, TValue>
         var largeHash = hasher.Hash((ulong)systemHashCode);
         h1 = (uint)(largeHash >> 32);
         h2 = (byte)(largeHash & 0b0111_1111);
+        // h1 = (uint)systemHashCode;
+        // h2 = (byte)(systemHashCode & 0b0111_1111);
     }
 
     #endregion

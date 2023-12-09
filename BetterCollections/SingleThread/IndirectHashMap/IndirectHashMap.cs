@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using BetterCollections.Exceptions;
-using BetterCollections.IndirectHashMap_Internal;
 using BetterCollections.Misc;
 
 namespace BetterCollections;
@@ -23,12 +23,40 @@ public partial class IndirectHashMap<TKey, TValue> : IDictionary<TKey, TValue>
 
     public TValue this[TKey key]
     {
-        get => throw new NotImplementedException();
-        set => throw new NotImplementedException();
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get
+        {
+            ref var value = ref TryGetValue(key);
+            if (Unsafe.IsNullRef(ref value)) throw new KeyNotFoundException();
+            return value;
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        set
+        {
+#if NET7_0_OR_GREATER
+            // ReSharper disable once RedundantAssignment
+            var r = table.groupType switch
+            {
+                GroupType.Vector64 => throw new NotImplementedException(),
+                GroupType.Vector128 => throw new NotImplementedException(),
+                GroupType.Vector256 => Vector256Impl.TryInsert(this, key, value, InsertBehavior.FailureIfExisting),
+#if NET8_0_OR_GREATER
+                GroupType.Vector512 => throw new NotImplementedException(),
+#endif
+                _ => throw new NotImplementedException(), // ulong
+            };
+#else
+            bool r = true; // todo
+#endif
+            Debug.Assert(r);
+        }
     }
 
     #region TryGetValue
 
+#if NET6_0_OR_GREATER
+    [SkipLocalsInit]
+#endif
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryGetValue(TKey key, out TValue value)
     {
@@ -75,6 +103,9 @@ public partial class IndirectHashMap<TKey, TValue> : IDictionary<TKey, TValue>
 
     #region ContainsKey
 
+#if NET6_0_OR_GREATER
+    [SkipLocalsInit]
+#endif
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool ContainsKey(TKey key)
     {
@@ -87,6 +118,9 @@ public partial class IndirectHashMap<TKey, TValue> : IDictionary<TKey, TValue>
 
     #region Add
 
+#if NET6_0_OR_GREATER
+    [SkipLocalsInit]
+#endif
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Add(TKey key, TValue value)
     {
@@ -109,24 +143,61 @@ public partial class IndirectHashMap<TKey, TValue> : IDictionary<TKey, TValue>
 
     #endregion
 
+    #region Remove
+
+#if NET6_0_OR_GREATER
+    [SkipLocalsInit]
+#endif
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Remove(TKey key)
     {
         throw new NotImplementedException();
     }
 
+    #endregion
+
+    #region Clear
+
+#if NET6_0_OR_GREATER
+    [SkipLocalsInit]
+#endif
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Clear()
     {
         throw new NotImplementedException();
     }
 
+    #endregion
+
+    #region Add KeyValuePair
+
+#if NET6_0_OR_GREATER
+    [SkipLocalsInit]
+#endif
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Add(KeyValuePair<TKey, TValue> item) => Add(item.Key, item.Value);
 
+    #endregion
+
+    #region Contains KeyValuePair
+
+#if NET6_0_OR_GREATER
+    [SkipLocalsInit]
+#endif
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Contains(KeyValuePair<TKey, TValue> item) => ContainsKey(item.Key);
 
+    #endregion
+
+    #region Remove KeyValuePair
+
+#if NET6_0_OR_GREATER
+    [SkipLocalsInit]
+#endif
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Remove(KeyValuePair<TKey, TValue> item) => Remove(item.Key);
+
+    #endregion
 
     public void CopyTo(KeyValuePair<TKey, TValue>[] array, int arrayIndex)
     {

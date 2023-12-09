@@ -6,7 +6,6 @@ using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
-using BetterCollections.IndirectHashMap_Internal;
 using BetterCollections.Misc;
 
 namespace BetterCollections;

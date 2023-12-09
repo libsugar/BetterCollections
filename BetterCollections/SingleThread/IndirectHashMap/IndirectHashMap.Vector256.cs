@@ -3,9 +3,9 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Net.Mail;
 using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
-using BetterCollections.IndirectHashMap_Internal;
 using BetterCollections.Misc;
 
 namespace BetterCollections;
@@ -19,29 +19,20 @@ public partial class IndirectHashMap<TKey, TValue>
         #region Init
 
         [SkipLocalsInit]
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void InitTable(IndirectHashMap<TKey, TValue> self, int cap, ref Table table, bool clear)
         {
             if (cap > 0) cap = cap.CeilPowerOf2();
             if (cap != 0 && cap < DefaultCapacity) cap = DefaultCapacity;
-            var ctrlSize = cap == 0 ? 0 : cap.CeilBinary(GroupSize) / GroupSize;
             var slotSize = cap;
-            table.ctrlSizeMinusOne = ctrlSize == 0 ? 0 : ctrlSize - 1;
+            var ctrlSize = cap == 0 ? 0 : cap + GroupSize;
             table.slotSizeMinusOne = slotSize == 0 ? 0 : slotSize - 1;
-            table.poolCtrl.Vector256 = self.poolFactory.GetMayUninitialized<Vector256<byte>>();
-            table.ctrlArray.Vector256 = ctrlSize == 0 ? null : table.poolCtrl.Vector256.Rent(ctrlSize);
-            table.metaArray = cap == 0 ? null : self.poolMetas.Rent(cap);
+            table.ctrlArray = ctrlSize == 0 ? null : self.poolBytes.Rent(ctrlSize.CeilBinary(GroupSize));
             table.entryArray = cap == 0 ? null : self.poolEntries.Rent(cap);
-            table.entryIndex = 0;
             table.growthCount = MakeGrowth(slotSize);
             table.groupType = GroupType.Vector256;
             if (clear && cap > 0)
             {
-                var ctrlArray = table.ctrlArray.Vector256;
-                ctrlArray.AsSpan(0, ctrlSize).Fill(Vector256<byte>.AllBitsSet);
-
-                var metaArray = table.metaArray;
-                metaArray.AsSpan(0, slotSize).Fill(new(0, -1));
+                table.ctrlArray.AsSpan(0, ctrlSize).Fill(SlotIsEmpty);
             }
         }
 
@@ -50,24 +41,25 @@ public partial class IndirectHashMap<TKey, TValue>
         #region First Init
 
         [SkipLocalsInit]
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void FirstInit(IndirectHashMap<TKey, TValue> self, ref Table table)
         {
-            var new_ctrlSize = 1;
             var new_slotSize = DefaultCapacity;
 
-            var new_ctrlArray = table.poolCtrl.Vector256.Rent(new_ctrlSize);
-            var new_metaArray = self.poolMetas.Rent(new_slotSize);
+            var new_ctrlSize = new_slotSize + GroupSize;
+
+            var new_ctrlArray = self.poolBytes.Rent(new_ctrlSize.CeilBinary(GroupSize));
             var new_entryArray = self.poolEntries.Rent(new_slotSize);
 
-            new_ctrlArray[0] = Vector256.Create(SlotIsEmpty);
+            new_ctrlArray.AsSpan(0, new_ctrlSize).Fill(SlotIsEmpty);
 
-            table.ctrlSizeMinusOne = new_ctrlSize - 1;
             table.slotSizeMinusOne = new_slotSize - 1;
 
-            table.ctrlArray.Vector256 = new_ctrlArray;
-            table.metaArray = new_metaArray;
+            table.ctrlArray = new_ctrlArray;
             table.entryArray = new_entryArray;
+
+            table.growthCount = MakeGrowth(new_slotSize);
+
+            self.version++;
         }
 
         #endregion
@@ -78,64 +70,54 @@ public partial class IndirectHashMap<TKey, TValue>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ref TValue TryFind(IndirectHashMap<TKey, TValue> self, TKey key)
         {
-            ref var table = ref self.table;
+            ref readonly var table = ref self.table;
 
             if (table.entryArray == null) return ref Unsafe.NullRef<TValue>();
 
-            self.CalcHash(ref key, out var h1, out var h2);
+            self.CalcHash(key, out var h1, out var h2);
 
-            #region Try Find Item
+            ref readonly var ctrl_array = ref table.ctrlArray!;
+            ref readonly var entry_array = ref table.entryArray!;
 
+            ref readonly var slot_size_m1 = ref table.slotSizeMinusOne;
+
+            for (uint pos = h1 & (uint)slot_size_m1, stride = 0u;;
+                 stride += GroupSize, pos += stride, pos &= (uint)slot_size_m1)
             {
-                var ctrl_array = table.ctrlArray.Vector256!;
-                var meta_array = table.metaArray!;
-                var entry_array = table.entryArray!;
+                Debug.Assert(stride <= slot_size_m1);
 
-                var group_count_m1 = table.ctrlSizeMinusOne;
+                var group = Vector256.LoadUnsafe(ref ctrl_array[pos]);
+                var cmp = Vector256.Equals(group, Vector256.Create(h2));
+                var match = cmp.ExtractMostSignificantBits();
 
-                #region Small
-
-                if (group_count_m1 == 0)
+                for (; match != 0; match &= match - 1)
                 {
-                    ref var group = ref ctrl_array[0];
-                    var cmp = Vector256.Equals(group, Vector256.Create(h2));
-                    var match = cmp.ExtractMostSignificantBits();
+                    var offset = (int)uint.TrailingZeroCount(match);
+                    var index = (pos + offset) & slot_size_m1;
+                    ref var entry = ref entry_array[index];
 
-                    for (; match != 0; match &= match - 1)
+                    #region Eq
+
+                    if (typeof(TKey).IsValueType && self.comparer == null)
                     {
-                        var pos = (int)uint.TrailingZeroCount(match);
-                        ref var entry = ref entry_array[pos];
-
-                        if (typeof(TKey).IsValueType && self.comparer == null)
+                        if (EqualityComparer<TKey>.Default.Equals(key, entry.Key))
                         {
-                            if (EqualityComparer<TKey>.Default.Equals(key, entry.Key))
-                            {
-                                return ref entry.Value;
-                            }
+                            return ref entry.Value;
                         }
-                        else
+                    }
+                    else
+                    {
+                        if (self.comparer!.Equals(key, entry.Key))
                         {
-                            if (self.comparer!.Equals(key, entry.Key))
-                            {
-                                return ref entry.Value;
-                            }
+                            return ref entry.Value;
                         }
                     }
 
-                    return ref Unsafe.NullRef<TValue>();
+                    #endregion
                 }
 
-                #endregion
-
-                var slot_count_m1 = table.slotSizeMinusOne;
-
-                for (;;)
-                {
-                    throw new NotImplementedException("todo");
-                }
+                if (group.ExtractMostSignificantBits() != 0) return ref Unsafe.NullRef<TValue>();
             }
-
-            #endregion
         }
 
         #endregion
@@ -147,40 +129,62 @@ public partial class IndirectHashMap<TKey, TValue>
         public static bool TryInsert(IndirectHashMap<TKey, TValue> self,
             TKey key, TValue value, InsertBehavior behavior)
         {
-            self.CalcHash(ref key, out var h1, out var h2);
-
             ref var table = ref self.table;
 
-            if (table.entryArray == null)
+            if (table.entryArray == null!)
             {
                 FirstInit(self, ref table);
-                Debug.Assert(self.table.entryArray != null);
-                Debug.Assert(self.table.metaArray != null);
-                Debug.Assert(self.table.ctrlArray.Vector256 != null);
-                goto do_insert_no_grow;
+                Debug.Assert(table.entryArray != null);
+                Debug.Assert(table.ctrlArray != null);
+            }
+            else if (self.count >= table.growthCount)
+            {
+                ReSize(self);
             }
 
-            #region Try Find Item
+            return TryInsertNoGrow(self, key, value, behavior);
+        }
 
+        #endregion
+
+        #region TryInsertNoGrow
+
+        [SkipLocalsInit]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool TryInsertNoGrow(IndirectHashMap<TKey, TValue> self,
+            TKey key, TValue value, InsertBehavior behavior)
+        {
+            ref var table = ref self.table;
+
+            self.CalcHash(key, out var h1, out var h2);
+
+            ref readonly var ctrl_array = ref table.ctrlArray!;
+            ref readonly var entry_array = ref table.entryArray!;
+
+            var slot_size_m1 = table.slotSizeMinusOne;
+
+            uint insert_pos = uint.MaxValue;
+
+            for (uint pos = h1 & (uint)slot_size_m1, stride = 0u;;
+                 stride += GroupSize, pos += stride, pos &= (uint)slot_size_m1)
             {
-                var ctrl_array = table.ctrlArray.Vector256!;
-                var meta_array = table.metaArray!;
-                var entry_array = table.entryArray!;
+                Debug.Assert(stride <= slot_size_m1);
 
-                var group_count_m1 = table.ctrlSizeMinusOne;
+                var group = Vector256.LoadUnsafe(ref ctrl_array[pos]);
 
-                #region Small
+                #region Try Find Item
 
-                if (group_count_m1 == 0)
                 {
-                    ref var group = ref ctrl_array[0];
                     var cmp = Vector256.Equals(group, Vector256.Create(h2));
                     var match = cmp.ExtractMostSignificantBits();
 
                     for (; match != 0; match &= match - 1)
                     {
-                        var pos = (int)uint.TrailingZeroCount(match);
-                        ref var entry = ref entry_array[pos];
+                        var offset = (int)uint.TrailingZeroCount(match);
+                        var index = (pos + offset) & slot_size_m1;
+                        ref var entry = ref entry_array[index];
+
+                        #region Eq
 
                         if (typeof(TKey).IsValueType && self.comparer == null)
                         {
@@ -188,6 +192,7 @@ public partial class IndirectHashMap<TKey, TValue>
                             {
                                 if (behavior != InsertBehavior.OverwriteIfExisting) return false;
                                 entry.Value = value;
+                                self.version++;
                                 return true;
                             }
                         }
@@ -197,116 +202,44 @@ public partial class IndirectHashMap<TKey, TValue>
                             {
                                 if (behavior != InsertBehavior.OverwriteIfExisting) return false;
                                 entry.Value = value;
+                                self.version++;
                                 return true;
                             }
                         }
-                    }
 
-                    goto do_insert;
+                        #endregion
+                    }
                 }
 
                 #endregion
 
-                var slot_count_m1 = table.slotSizeMinusOne;
+                #region Try Find Empty Or Delete
 
-                for (;;)
+                if (insert_pos == uint.MaxValue)
                 {
-                    throw new NotImplementedException("todo");
-                }
-            }
-
-            #endregion
-
-            do_insert:
-
-            if (ShouldGrow(self.count, table.growthCount))
-            {
-                ReSize(self);
-            }
-
-            do_insert_no_grow:
-
-            #region Try Find Empty or Delete
-
-            {
-                var ctrl_array = table.ctrlArray.Vector256!;
-
-                var group_count_m1 = table.ctrlSizeMinusOne;
-                var slot_count_m1 = table.slotSizeMinusOne;
-
-                int insert_pos;
-
-                if (group_count_m1 == 0)
-                {
-                    ref var group = ref ctrl_array[0];
-                    insert_pos = (int)uint.TrailingZeroCount(group.ExtractMostSignificantBits());
-                    Unsafe.Add(ref Unsafe.As<Vector256<byte>, byte>(ref group), insert_pos) = h2;
-                    goto insert_small;
+                    var match = group.ExtractMostSignificantBits();
+                    insert_pos = match != 0
+                        ? (pos + uint.TrailingZeroCount(match)) & (uint)slot_size_m1
+                        : uint.MaxValue;
                 }
 
-                for (;;)
+                if (group.ExtractMostSignificantBits() != 0)
                 {
-                    var group_pos = h1 & group_count_m1;
-                    var next_group_pos = group_pos & group_count_m1;
-                    var in_group_offset = h1 & slot_count_m1 & (GroupSize - 1);
-
-                    throw new NotImplementedException();
-                }
-
-                // insert_new:
-                // {
-                //     var meta_array = table.metaArray!;
-                //     var entry_array = table.entryArray!;
-                //
-                //     var entry_index = table.entryIndex++;
-                //
-                //     ref var meta = ref meta_array[insert_pos];
-                //     meta.HashCode = h1;
-                //     meta.Index = entry_index;
-                //
-                //     ref var entry = ref entry_array[entry_index];
-                //     entry.Key = key!;
-                //     entry.Value = value;
-                //
-                //     return true;
-                // }
-                //
-                // insert_del:
-                // {
-                //     var meta_array = table.metaArray!;
-                //     var entry_array = table.entryArray!;
-                //
-                //     ref var meta = ref meta_array[insert_pos];
-                //     meta.HashCode = h1;
-                //
-                //     ref var entry = ref entry_array[meta.Index];
-                //     entry.Key = key!;
-                //     entry.Value = value;
-                //
-                //     return true;
-                // }
-
-                insert_small:
-                {
-                    var meta_array = table.metaArray!;
-                    var entry_array = table.entryArray!;
-
-                    ref var meta = ref meta_array[insert_pos];
-                    meta.HashCode = h1;
-                    meta.Index = insert_pos;
-
-                    ref var entry = ref entry_array[insert_pos];
-                    entry.Key = key!;
-                    entry.Value = value;
-
+                    Debug.Assert(insert_pos != uint.MaxValue);
+                    if ((ctrl_array[insert_pos] & SlotIsDeleted) == 0)
+                    {
+                        insert_pos = uint.TrailingZeroCount(Vector256.LoadUnsafe(ref ctrl_array[0])
+                            .ExtractMostSignificantBits());
+                    }
+                    entry_array[insert_pos] = new(key, value, h1);
+                    ctrl_array[insert_pos] = h2;
                     self.count++;
                     self.version++;
-
                     return true;
                 }
-            }
 
-            #endregion
+                #endregion
+            }
         }
 
         #endregion
@@ -314,55 +247,114 @@ public partial class IndirectHashMap<TKey, TValue>
         #region ReSize
 
         [SkipLocalsInit]
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void ReSize(IndirectHashMap<TKey, TValue> self)
         {
-            ref var old_table = ref self.table;
-            Table new_table = default;
-            new_table.poolCtrl = old_table.poolCtrl;
-            new_table.groupType = old_table.groupType;
+            ref var table = ref self.table;
 
-            var old_slot_size = old_table.slotSizeMinusOne + 1;
-            var new_slot_size = old_slot_size << 1;
+            var old_ctrlArray = table.ctrlArray!;
+            var old_entryArray = table.entryArray!;
+            var old_slotSizeMinusOne = table.slotSizeMinusOne;
 
-            var new_ctrl_size = new_slot_size.CeilBinary(GroupSize) / GroupSize;
+            var new_slotSize = (table.slotSizeMinusOne + 1) << 1;
+            var new_ctrlSize = new_slotSize + GroupSize;
 
-            if (new_ctrl_size == 1)
+            var new_ctrlArray = self.poolBytes.Rent(new_ctrlSize.CeilBinary(GroupSize));
+            var new_entryArray = self.poolEntries.Rent(new_slotSize);
+
+            try
             {
-                new_table.metaArray = self.poolMetas.Rent(new_slot_size);
-                new_table.entryArray = self.poolEntries.Rent(new_slot_size);
+                new_ctrlArray.AsSpan(0, new_ctrlSize).Fill(SlotIsEmpty);
 
-                var entry_index = old_table.entryIndex;
+                table.slotSizeMinusOne = new_slotSize - 1;
 
-                old_table.metaArray.AsSpan(entry_index).CopyTo(new_table.metaArray.AsSpan(entry_index));
-                old_table.entryArray.AsSpan(entry_index).CopyTo(new_table.entryArray.AsSpan(entry_index));
+                table.ctrlArray = new_ctrlArray;
+                table.entryArray = new_entryArray;
 
-                new_table.ctrlArray = old_table.ctrlArray;
-                new_table.ctrlSizeMinusOne = old_table.ctrlSizeMinusOne;
-                new_table.slotSizeMinusOne = new_slot_size - 1;
-                new_table.entryIndex = entry_index;
-                new_table.growthCount = MakeGrowth(new_slot_size);
+                self.version++;
 
-                var old_metaArray = old_table.metaArray;
-                var old_entryArray = old_table.entryArray;
-
-                old_table = new_table;
-                self.poolMetas.Return(old_metaArray!);
-                self.poolEntries.Return(old_entryArray!, RuntimeHelpers.IsReferenceOrContainsReferences<Entry>());
+                ReInsert(self, ref old_ctrlArray, ref old_entryArray);
             }
-            else
+            catch
             {
-                var ctrlArray = new_table.ctrlArray.Vector256 = new_table.poolCtrl.Vector256.Rent(new_ctrl_size);
-                new_table.metaArray = self.poolMetas.Rent(new_slot_size);
-                new_table.entryArray = self.poolEntries.Rent(new_slot_size);
+                table.slotSizeMinusOne = old_slotSizeMinusOne;
 
-                var entry_index = old_table.entryIndex;
+                table.ctrlArray = old_ctrlArray;
+                table.entryArray = old_entryArray;
 
-                ctrlArray.AsSpan().Fill(Vector256<byte>.AllBitsSet);
-                new_table.metaArray.AsSpan(0, new_slot_size).Fill(new(0, -1));
-                old_table.entryArray.AsSpan(entry_index).CopyTo(new_table.entryArray.AsSpan(entry_index));
+                self.poolBytes.Return(new_ctrlArray);
+                self.poolEntries.Return(new_entryArray, RuntimeHelpers.IsReferenceOrContainsReferences<Entry>());
 
-                throw new NotImplementedException("todo");
+                self.version++;
+
+                throw;
+            }
+
+            table.growthCount = MakeGrowth(new_slotSize);
+
+            self.poolBytes.Return(old_ctrlArray);
+            self.poolEntries.Return(old_entryArray, RuntimeHelpers.IsReferenceOrContainsReferences<Entry>());
+
+            self.version++;
+        }
+
+        #endregion
+
+        #region ReInsert
+
+        [SkipLocalsInit]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static void ReInsert(
+            IndirectHashMap<TKey, TValue> self,
+            ref readonly byte[] old_ctrlArray,
+            ref readonly Entry[] old_entryArray
+        )
+        {
+            ref var table = ref self.table;
+
+            ref readonly var ctrl_array = ref table.ctrlArray!;
+            ref readonly var entry_array = ref table.entryArray!;
+
+            var slot_size_m1 = table.slotSizeMinusOne;
+
+            var count = self.count;
+            for (var group_pos = 0; group_pos < old_ctrlArray.Length; group_pos += GroupSize)
+            {
+                var old_group = Vector256.LoadUnsafe(ref old_ctrlArray[group_pos]);
+                var old_match = (~old_group).ExtractMostSignificantBits();
+
+                for (; old_match != 0; old_match &= old_match - 1)
+                {
+                    var old_pos = group_pos + (int)uint.TrailingZeroCount(old_match);
+                    if (old_pos > count) return;
+
+                    ref var old_entry = ref old_entryArray[old_pos];
+                    var h1 = old_entry.HashCode;
+                    var h2 = old_ctrlArray[old_pos];
+
+                    for (uint pos = h1 & (uint)slot_size_m1, stride = 0u;;
+                         stride += GroupSize, pos += stride, pos &= (uint)slot_size_m1)
+                    {
+                        Debug.Assert(stride <= slot_size_m1);
+
+                        var group = Vector256.LoadUnsafe(ref ctrl_array[pos]);
+                        var match = group.ExtractMostSignificantBits();
+
+                        if (match != 0)
+                        {
+                            var insert_pos = (pos + uint.TrailingZeroCount(match)) & (uint)slot_size_m1;
+                            if ((ctrl_array[insert_pos] & SlotIsDeleted) == 0)
+                            {
+                                insert_pos = uint.TrailingZeroCount(Vector256.LoadUnsafe(ref ctrl_array[0])
+                                    .ExtractMostSignificantBits());
+                            }
+                            entry_array[insert_pos] = old_entry;
+                            ctrl_array[insert_pos] = h2;
+                            self.count++;
+                            self.version++;
+                            break;
+                        }
+                    }
+                }
             }
         }
 
