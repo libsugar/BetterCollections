@@ -56,6 +56,7 @@ public readonly struct AHasher : IHasher
         else
         {
             union = new(new SoftHasher(MemoryMarshal.Cast<Vector128<byte>, ulong>(bytes)));
+            soft = true;
         }
     }
 
