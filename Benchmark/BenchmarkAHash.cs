@@ -35,20 +35,20 @@ public class BenchmarkAHash
     }
 
 #if NET7_0_OR_GREATER
-    
+
     [Benchmark]
     public int AHash3()
     {
         var r = 0;
         for (int i = 0; i < 1000; i++)
         {
-            var hasher = new AesHasher(AHasher2.GlobalRandomState);
-            hasher.Add(i);
-            r += hasher.ToHashCode();
+            var hasher = AesHasher.Create(AHasher2.GlobalRandomState);
+            AesHasher.Add(ref hasher, i);
+            r += AesHasher.ToHashCode(ref hasher);
         }
         return r;
     }
-    
+
 #endif
 
     [Benchmark(Baseline = true)]

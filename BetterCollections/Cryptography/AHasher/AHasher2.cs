@@ -25,8 +25,10 @@ public partial struct AHasher2 : IHasher2
     public static AHasherRandomState GlobalRandomState
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-        get;
-    } = GenerateRandomState();
+        get => _globalRandomState;
+    }
+
+    public static readonly AHasherRandomState _globalRandomState = GenerateRandomState();
 
     [ThreadStatic]
     private static AHasherRandomState _threadCurrentRandomState;
@@ -60,7 +62,7 @@ public partial struct AHasher2 : IHasher2
         var rand = Random.Shared;
 #endif
         Unsafe.SkipInit(out AHasherRandomState state);
-        rand.NextBytes(MemoryMarshal.Cast<ulong, byte>(state.AsSpan()));
+        rand.NextBytes(MemoryMarshal.Cast<ulong, byte>(state.UnsafeAsMutableSpan()));
         return state;
     }
 
@@ -68,42 +70,39 @@ public partial struct AHasher2 : IHasher2
 
     #region Create
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public static AHasher2 CreateGlobal()  => new(GlobalRandomState);
+    public static AHasher2 Global
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+        get;
+    } = new(GlobalRandomState);
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public static AHasher2 CreateThreadCurrent() => new(ThreadCurrentRandomState);
+    public static AHasher2 ThreadCurrent
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+        get;
+    } = new(ThreadCurrentRandomState);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
     public static AHasher2 CreateRandom() => new(GenerateRandomState());
-
+    
     #endregion
 
     #region Impl
 
+    private AHasher2Data data;
+
 #if NET7_0_OR_GREATER
-    private Union union;
-
-    [StructLayout(LayoutKind.Explicit)]
-    private struct Union
-    {
-        [FieldOffset(0)]
-        public AesHasher aesHasher;
-        [FieldOffset(0)]
-        public SoftHasher softHasher;
-    }
-
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
     public AHasher2(AHasherRandomState randomState)
     {
         Unsafe.SkipInit(out this);
         if (AesHasher.IsSupported)
         {
-            union.aesHasher = new AesHasher(randomState);
+            data = AesHasher.Create(randomState);
         }
         else
         {
-            union.softHasher = new SoftHasher(randomState);
+            throw new NotImplementedException();
         }
     }
 
@@ -112,58 +111,59 @@ public partial struct AHasher2 : IHasher2
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
     public void Add(int value)
     {
-        if (AesHasher.IsSupported) union.aesHasher.Add(value);
-        else union.softHasher.Add(value);
+        if (AesHasher.IsSupported) AesHasher.Add(ref data, value);
+        else throw new NotImplementedException();
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
     public void Add(long value)
     {
-        if (AesHasher.IsSupported) union.aesHasher.Add(value);
-        else union.softHasher.Add(value);
+        if (AesHasher.IsSupported) AesHasher.Add(ref data, value);
+        else throw new NotImplementedException();
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
     public void Add<T>(T value)
     {
-        if (AesHasher.IsSupported) union.aesHasher.Add(value);
-        else union.softHasher.Add(value);
+        if (AesHasher.IsSupported) AesHasher.Add(ref data, value);
+        else throw new NotImplementedException();
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
     public void Add<T>(T value, IEqualityComparer<T>? comparer)
     {
-        if (AesHasher.IsSupported) union.aesHasher.Add(value, comparer);
-        else union.softHasher.Add(value, comparer);
+        if (AesHasher.IsSupported) AesHasher.Add(ref data, value, comparer);
+        else throw new NotImplementedException();
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
     public void AddBytes(ReadOnlySpan<byte> value)
     {
-        if (AesHasher.IsSupported) union.aesHasher.AddBytes(value);
-        else union.softHasher.AddBytes(value);
+        if (AesHasher.IsSupported) AesHasher.AddBytes(ref data, value);
+        else throw new NotImplementedException();
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
     public void AddString(ReadOnlySpan<byte> value)
     {
-        if (AesHasher.IsSupported) union.aesHasher.AddString(value);
-        else union.softHasher.AddString(value);
+        if (AesHasher.IsSupported) AesHasher.AddString(ref data, value);
+        else throw new NotImplementedException();
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
     public void AddString(ReadOnlySpan<char> value)
     {
-        if (AesHasher.IsSupported) union.aesHasher.AddString(value);
-        else union.softHasher.AddString(value);
+        if (AesHasher.IsSupported) AesHasher.AddString(ref data, value);
+        else throw new NotImplementedException();
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public int ToHashCode() => AesHasher.IsSupported ? union.aesHasher.ToHashCode() : union.softHasher.ToHashCode();
+    public int ToHashCode() =>
+        AesHasher.IsSupported ? AesHasher.ToHashCode(ref data) : throw new NotImplementedException();
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
     public long ToHashCodeLong() =>
-        AesHasher.IsSupported ? union.aesHasher.ToHashCodeLong() : union.softHasher.ToHashCodeLong();
+        AesHasher.IsSupported ? AesHasher.ToHashCodeLong(ref data) : throw new NotImplementedException();
 
     #endregion
 
@@ -171,47 +171,40 @@ public partial struct AHasher2 : IHasher2
     private SoftHasher softHasher;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public AHasher2(SoftHasher softHasher)
-    {
-        Unsafe.SkipInit(out this);
-        this.softHasher = softHasher;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
     public AHasher2(AHasherRandomState randomState)
     {
         Unsafe.SkipInit(out this);
-        softHasher = new SoftHasher(randomState);
+        throw new NotImplementedException();
     }
 
     #region IHasher
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public void Add(int value) => softHasher.Add(value);
+    public void Add(int value) => throw new NotImplementedException();
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public void Add(long value) => softHasher.Add(value);
+    public void Add(long value) => throw new NotImplementedException();
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public void Add<T>(T value) => softHasher.Add(value);
+    public void Add<T>(T value) => throw new NotImplementedException();
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public void Add<T>(T value, IEqualityComparer<T>? comparer) => softHasher.Add(value, comparer);
+    public void Add<T>(T value, IEqualityComparer<T>? comparer) => throw new NotImplementedException();
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public void AddBytes(ReadOnlySpan<byte> value) => softHasher.AddBytes(value);
+    public void AddBytes(ReadOnlySpan<byte> value) => throw new NotImplementedException();
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public void AddString(ReadOnlySpan<byte> value) => softHasher.AddString(value);
+    public void AddString(ReadOnlySpan<byte> value) => throw new NotImplementedException();
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public void AddString(ReadOnlySpan<char> value) => softHasher.AddString(value);
+    public void AddString(ReadOnlySpan<char> value) => throw new NotImplementedException();
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public int ToHashCode() => softHasher.ToHashCode();
+    public int ToHashCode() => throw new NotImplementedException();
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public long ToHashCodeLong() => softHasher.ToHashCodeLong();
+    public long ToHashCodeLong() => throw new NotImplementedException();
 
     #endregion
 
@@ -224,18 +217,25 @@ public partial struct AHasher2 : IHasher2
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
     public static int Combine<T1>(T1 value1)
     {
-        var hasher = CreateGlobal();
-        hasher.Add(value1);
-        return hasher.ToHashCode();
+#if NET7_0_OR_GREATER
+        if (AesHasher.IsSupported)
+        {
+            return AesHasher.Combine(value1);
+        }
+#endif
+        throw new NotImplementedException();
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
     public static int Combine<T1, T2>(T1 value1, T2 value2)
     {
-        var hasher = CreateGlobal();
-        hasher.Add(value1);
-        hasher.Add(value2);
-        return hasher.ToHashCode();
+#if NET7_0_OR_GREATER
+        if (AesHasher.IsSupported)
+        {
+            return AesHasher.Combine(value1, value2);
+        }
+#endif
+        throw new NotImplementedException();
     }
 
     #endregion
