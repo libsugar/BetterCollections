@@ -1,4 +1,4 @@
-﻿#if NET7_0_OR_GREATER
+﻿#if NET8_0_OR_GREATER
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -23,86 +23,114 @@ public static class AesHasher
         new(randomState.key1, randomState.key2, randomState.key1 ^ randomState.key2);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public static Vector128<byte> ToVector<T>(T value)
+    public static AHasher2Data Add(AHasher2Data data, bool value) =>
+        Add(data, Vector128.CreateScalar(value ? (byte)1 : (byte)0));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static AHasher2Data Add(AHasher2Data data, short value) =>
+        Add(data, Vector128.CreateScalar(value));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static AHasher2Data Add(AHasher2Data data, ushort value) =>
+        Add(data, Vector128.CreateScalar(value));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static AHasher2Data Add(AHasher2Data data, int value) =>
+        Add(data, Vector128.CreateScalar(value));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static AHasher2Data Add(AHasher2Data data, uint value) =>
+        Add(data, Vector128.CreateScalar(value));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static AHasher2Data Add(AHasher2Data data, long value) =>
+        Add(data, Vector128.CreateScalar(value));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static AHasher2Data Add(AHasher2Data data, ulong value) =>
+        Add(data, Vector128.CreateScalar(value));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static AHasher2Data Add(AHasher2Data data, nint value) =>
+        Add(data, Vector128.CreateScalar(value));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static AHasher2Data Add(AHasher2Data data, nuint value) =>
+        Add(data, Vector128.CreateScalar(value));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static AHasher2Data Add(AHasher2Data data, float value) =>
+        Add(data, Vector128.CreateScalar(value));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static AHasher2Data Add(AHasher2Data data, double value) =>
+        Add(data, Vector128.CreateScalar(value));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static AHasher2Data Add(AHasher2Data data, Int128 value) =>
+        Add(data, Unsafe.As<Int128, Vector128<byte>>(ref value));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static AHasher2Data Add(AHasher2Data data, UInt128 value) =>
+        Add(data, Unsafe.As<UInt128, Vector128<byte>>(ref value));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static AHasher2Data Add(AHasher2Data data, decimal value) =>
+        Add(data, Unsafe.As<decimal, Vector128<byte>>(ref value));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization), SkipLocalsInit]
+    public static AHasher2Data Add<T>(AHasher2Data data, T value)
     {
-        var type = typeof(T);
-        if (type == typeof(int)) return Vector128.CreateScalar(Unsafe.As<T, int>(ref value)).AsByte();
-        else if (type == typeof(uint)) return Vector128.CreateScalar(Unsafe.As<T, uint>(ref value)).AsByte();
-        else if (type == typeof(long)) return Vector128.CreateScalar(Unsafe.As<T, long>(ref value)).AsByte();
-        else if (type == typeof(ulong)) return Vector128.CreateScalar(Unsafe.As<T, ulong>(ref value)).AsByte();
-        else if (type == typeof(Int128)) return Unsafe.As<T, Vector128<byte>>(ref value);
-        else if (type == typeof(UInt128)) return Unsafe.As<T, Vector128<byte>>(ref value);
-        else if (type == typeof(Vector128<byte>)) return Unsafe.As<T, Vector128<byte>>(ref value);
-        else if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Vector128<>))
-            return Unsafe.As<T, Vector128<byte>>(ref value);
-        else return Vector128.CreateScalar(value == null ? 0 : value.GetHashCode()).AsByte();
+        if (Vector128<T>.IsSupported)
+            return Add(data, Vector128.CreateScalar(value).AsByte());
+
+        if (typeof(T) == typeof(Int128) || typeof(T) == typeof(UInt128) || typeof(T) == typeof(Vector128<byte>))
+            return Add(data, Unsafe.As<T, Vector128<byte>>(ref value));
+
+        if (typeof(T) == typeof(string))
+            return value == null ? Add(data, 0) : AddString(data, ((string)(object)value).AsSpan());
+        if (typeof(T) == typeof(Memory<char>))
+            return AddString(data, ((Memory<char>)(object)value!).Span);
+        if (typeof(T) == typeof(ReadOnlyMemory<char>))
+            return AddString(data, ((Memory<char>)(object)value!).Span);
+        if (typeof(T) == typeof(Memory<byte>))
+            return AddBytes(data, ((Memory<byte>)(object)value!).Span);
+        if (typeof(T) == typeof(ReadOnlyMemory<byte>))
+            return AddBytes(data, ((Memory<byte>)(object)value!).Span);
+
+        return Add(data, Vector128.CreateScalar(value == null ? 0 : value.GetHashCode()).AsByte());
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public static void Add(ref AHasher2Data data, int value) => Add(ref data, (long)value);
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public static void Add(ref AHasher2Data data, uint value) => Add(ref data, (ulong)value);
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public static void Add(ref AHasher2Data data, long value) => Add(ref data, Vector128.CreateScalar(value));
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public static void Add(ref AHasher2Data data, ulong value) => Add(ref data, Vector128.CreateScalar(value));
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public static void Add(ref AHasher2Data data, Int128 value) =>
-        Add(ref data, Unsafe.As<Int128, Vector128<byte>>(ref value));
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public static void Add(ref AHasher2Data data, UInt128 value) =>
-        Add(ref data, Unsafe.As<UInt128, Vector128<byte>>(ref value));
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public static void Add<T>(ref AHasher2Data data, T value)
+    public static AHasher2Data Add<T>(AHasher2Data data, T value, IEqualityComparer<T>? comparer)
     {
-        var type = typeof(T);
-        if (type == typeof(int)) Add(ref data, Unsafe.As<T, int>(ref value));
-        else if (type == typeof(uint)) Add(ref data, Unsafe.As<T, uint>(ref value));
-        else if (type == typeof(long)) Add(ref data, Unsafe.As<T, long>(ref value));
-        else if (type == typeof(ulong)) Add(ref data, Unsafe.As<T, ulong>(ref value));
-        else if (type == typeof(Int128)) Add(ref data, Unsafe.As<T, Int128>(ref value));
-        else if (type == typeof(UInt128)) Add(ref data, Unsafe.As<T, UInt128>(ref value));
-        else if (type == typeof(Vector128<byte>)) Add(ref data, Unsafe.As<T, Vector128<byte>>(ref value));
-        else if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Vector128<>))
-            Add(ref data, Unsafe.As<T, Vector128<byte>>(ref value));
-        else Add(ref data, value == null ? 0 : value.GetHashCode());
+        if (comparer == null) return Add(data, value);
+        else return Add(data, value == null ? 0 : comparer.GetHashCode(value));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public static void Add<T>(ref AHasher2Data data, T value, IEqualityComparer<T>? comparer)
-    {
-        if (comparer == null) Add(ref data, value);
-        else Add(ref data, value == null ? 0 : comparer.GetHashCode(value));
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public static void Add<T>(ref AHasher2Data data, Vector128<T> value)
+    public static AHasher2Data Add<T>(AHasher2Data data, Vector128<T> value)
 #if NET7_0
         where T : struct
 #endif
-        => Add(ref data, value.AsByte());
+        => Add(data, value.AsByte());
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public static void Add(ref AHasher2Data data, Vector128<byte> value)
+    public static AHasher2Data Add(AHasher2Data data, Vector128<byte> value)
     {
         data.enc = AesDec(data.enc, value);
         data.sum = ShuffleAndAdd(data.sum, value);
+        return data;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public static void AddBytes(ref AHasher2Data data, ReadOnlySpan<byte> value)
+    public static AHasher2Data AddBytes(AHasher2Data data, ReadOnlySpan<byte> value)
     {
-        AddLength(ref data, value.Length);
+        data = AddLength(data, value.Length);
 
         if (value.Length <= 8)
         {
-            Add(ref data, ReadSmall(value));
+            data = Add(data, ReadSmall(value));
         }
         else if (value.Length > 32)
         {
@@ -162,12 +190,12 @@ public static class AesHasher
                     sum[1] = ShuffleAndAdd(sum[1], blocks[3]);
                 }
 
-                Add(ref data, current[0]);
-                Add(ref data, current[1]);
-                Add(ref data, current[2]);
-                Add(ref data, current[3]);
-                Add(ref data, sum[0]);
-                Add(ref data, sum[1]);
+                data = Add(data, current[0]);
+                data = Add(data, current[1]);
+                data = Add(data, current[2]);
+                data = Add(data, current[3]);
+                data = Add(data, sum[0]);
+                data = Add(data, sum[1]);
             }
             else // 33 .. 64
             {
@@ -182,10 +210,10 @@ public static class AesHasher
                 var c = Vector128.LoadUnsafe(ref Unsafe.AsRef(in value[^(sizeof(ulong) * 4)]));
                 var d = Vector128.LoadUnsafe(ref Unsafe.AsRef(in value[^(sizeof(ulong) * 2)]));
 #endif
-                Add(ref data, a);
-                Add(ref data, b);
-                Add(ref data, c);
-                Add(ref data, d);
+                data = Add(data, a);
+                data = Add(data, b);
+                data = Add(data, c);
+                data = Add(data, d);
             }
         }
         else if (value.Length > 16) // 17 .. 32
@@ -197,43 +225,46 @@ public static class AesHasher
             var a = Vector128.LoadUnsafe(ref Unsafe.AsRef(in value[0]));
             var b = Vector128.LoadUnsafe(ref Unsafe.AsRef(in value[^(sizeof(ulong) * 2)]));
 #endif
-            Add(ref data, a);
-            Add(ref data, b);
+            data = Add(data, a);
+            data = Add(data, b);
         }
         else // 9 .. 16
         {
             var a = Vector128.Create(MemoryMarshal.Cast<byte, ulong>(value)[0],
                 MemoryMarshal.Cast<byte, ulong>(value.Slice(value.Length - sizeof(ulong), sizeof(ulong)))[0]);
-            Add(ref data, a);
+            data = Add(data, a);
         }
+
+        return data;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public static void AddString(ref AHasher2Data data, ReadOnlySpan<byte> value)
+    public static AHasher2Data AddString(AHasher2Data data, ReadOnlySpan<byte> value)
     {
         if (value.Length > 8)
         {
-            AddBytes(ref data, value);
+            data = AddBytes(data, value);
             data.enc = AesEnc(data.sum, data.enc);
             data.enc = AesDec(AesDec(data.enc, data.key), data.enc);
         }
         else
         {
-            AddLength(ref data, value.Length);
+            data = AddLength(data, value.Length);
 
             var a = ReadSmall(value);
             data.sum = ShuffleAndAdd(data.sum, a);
             data.enc = AesEnc(data.sum, data.enc);
             data.enc = AesDec(AesDec(data.enc, data.key), data.enc);
         }
+        return data;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public static void AddString(ref AHasher2Data data, ReadOnlySpan<char> value) =>
-        AddString(ref data, MemoryMarshal.Cast<char, byte>(value));
+    public static AHasher2Data AddString(AHasher2Data data, ReadOnlySpan<char> value) =>
+        AddString(data, MemoryMarshal.Cast<char, byte>(value));
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public static int ToHashCode(ref AHasher2Data data)
+    public static int ToHashCode(AHasher2Data data)
     {
         var combined = AesEnc(data.sum, data.enc);
         var result = AesDec(AesDec(combined, data.key), combined).AsInt32();
@@ -241,12 +272,20 @@ public static class AesHasher
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public static long ToHashCodeLong(ref AHasher2Data data)
+    public static long ToHashCodeLong(AHasher2Data data)
     {
         var combined = AesEnc(data.sum, data.enc);
         var result = AesDec(AesDec(combined, data.key), combined).AsInt64();
         return result[0];
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    private static AHasher2Data AddLength(AHasher2Data data, int len)
+    {
+        data.enc = (data.enc.AsInt32() + Vector128.CreateScalar(len)).AsByte();
+        return data;
+    }
+
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
     private static Vector128<byte> ReadSmall(ReadOnlySpan<byte> value)
@@ -261,12 +300,6 @@ public static class AesHasher
                     MemoryMarshal.Cast<byte, uint>(value.Slice(value.Length - sizeof(uint), sizeof(uint)))[0])
                 .AsByte()
         };
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    private static void AddLength(ref AHasher2Data data, int len)
-    {
-        data.enc = (data.enc.AsInt32() + Vector128.CreateScalar(len)).AsByte();
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
@@ -322,27 +355,94 @@ public static class AesHasher
     public static int Combine<T1>(T1 value1)
     {
         var data = Create(AHasher2._globalRandomState);
-        var target1 = ToVector(value1);
-        data.enc = AesDec(data.enc, target1);
-        data.sum = ShuffleAndAdd(data.sum, target1);
-        var combined = AesEnc(data.sum, data.enc);
-        var result = AesDec(AesDec(combined, data.key), combined).AsInt32();
-        return result[0];
+        data = Add(data, value1);
+        return ToHashCode(data);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
     public static int Combine<T1, T2>(T1 value1, T2 value2)
     {
         var data = Create(AHasher2._globalRandomState);
-        var target1 = ToVector(value1);
-        data.enc = AesDec(data.enc, target1);
-        data.sum = ShuffleAndAdd(data.sum, target1);
-        var target2 = ToVector(value2);
-        data.enc = AesDec(data.enc, target2);
-        data.sum = ShuffleAndAdd(data.sum, target2);
-        var combined = AesEnc(data.sum, data.enc);
-        var result = AesDec(AesDec(combined, data.key), combined).AsInt32();
-        return result[0];
+        data = Add(data, value1);
+        data = Add(data, value2);
+        return ToHashCode(data);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static int Combine<T1, T2, T3>(T1 value1, T2 value2, T3 value3)
+    {
+        var data = Create(AHasher2._globalRandomState);
+        data = Add(data, value1);
+        data = Add(data, value2);
+        data = Add(data, value3);
+        return ToHashCode(data);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static int Combine<T1, T2, T3, T4>(T1 value1, T2 value2, T3 value3, T4 value4)
+    {
+        var data = Create(AHasher2._globalRandomState);
+        data = Add(data, value1);
+        data = Add(data, value2);
+        data = Add(data, value3);
+        data = Add(data, value4);
+        return ToHashCode(data);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static int Combine<T1, T2, T3, T4, T5>(T1 value1, T2 value2, T3 value3, T4 value4, T5 value5)
+    {
+        var data = Create(AHasher2._globalRandomState);
+        data = Add(data, value1);
+        data = Add(data, value2);
+        data = Add(data, value3);
+        data = Add(data, value4);
+        data = Add(data, value5);
+        return ToHashCode(data);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static int Combine<T1, T2, T3, T4, T5, T6>(T1 value1, T2 value2, T3 value3, T4 value4, T5 value5, T6 value6)
+    {
+        var data = Create(AHasher2._globalRandomState);
+        data = Add(data, value1);
+        data = Add(data, value2);
+        data = Add(data, value3);
+        data = Add(data, value4);
+        data = Add(data, value5);
+        data = Add(data, value6);
+        return ToHashCode(data);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static int Combine<T1, T2, T3, T4, T5, T6, T7>(T1 value1, T2 value2, T3 value3, T4 value4, T5 value5,
+        T6 value6, T7 value7)
+    {
+        var data = Create(AHasher2._globalRandomState);
+        data = Add(data, value1);
+        data = Add(data, value2);
+        data = Add(data, value3);
+        data = Add(data, value4);
+        data = Add(data, value5);
+        data = Add(data, value6);
+        data = Add(data, value7);
+        return ToHashCode(data);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static int Combine<T1, T2, T3, T4, T5, T6, T7, T8>(T1 value1, T2 value2, T3 value3, T4 value4, T5 value5,
+        T6 value6, T7 value7, T8 value8)
+    {
+        var data = Create(AHasher2._globalRandomState);
+        data = Add(data, value1);
+        data = Add(data, value2);
+        data = Add(data, value3);
+        data = Add(data, value4);
+        data = Add(data, value5);
+        data = Add(data, value6);
+        data = Add(data, value7);
+        data = Add(data, value8);
+        return ToHashCode(data);
     }
 
     #endregion

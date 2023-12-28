@@ -1,7 +1,9 @@
 ﻿using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Diagnostics.Windows.Configs;
 using BetterCollections.Cryptography;
+#if NET8_0_OR_GREATER
 using BetterCollections.Cryptography.AHasherImpl;
+#endif
 
 namespace Benchmark;
 
@@ -23,6 +25,7 @@ public class BenchmarkAHash
         return r;
     }
 
+#if NET8_0_OR_GREATER
     [Benchmark]
     public int AHash2()
     {
@@ -34,8 +37,6 @@ public class BenchmarkAHash
         return r;
     }
 
-#if NET7_0_OR_GREATER
-
     [Benchmark]
     public int AHash3()
     {
@@ -43,12 +44,11 @@ public class BenchmarkAHash
         for (int i = 0; i < 1000; i++)
         {
             var hasher = AesHasher.Create(AHasher2.GlobalRandomState);
-            AesHasher.Add(ref hasher, i);
-            r += AesHasher.ToHashCode(ref hasher);
+            hasher = AesHasher.Add(hasher, i);
+            r += AesHasher.ToHashCode(hasher);
         }
         return r;
     }
-
 #endif
 
     [Benchmark(Baseline = true)]
