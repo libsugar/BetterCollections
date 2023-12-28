@@ -87,18 +87,7 @@ public static class AesHasher
         if (typeof(T) == typeof(Int128) || typeof(T) == typeof(UInt128) || typeof(T) == typeof(Vector128<byte>))
             return Add(data, Unsafe.As<T, Vector128<byte>>(ref value));
 
-        if (typeof(T) == typeof(string))
-            return value == null ? Add(data, 0) : AddString(data, ((string)(object)value).AsSpan());
-        if (typeof(T) == typeof(Memory<char>))
-            return AddString(data, ((Memory<char>)(object)value!).Span);
-        if (typeof(T) == typeof(ReadOnlyMemory<char>))
-            return AddString(data, ((Memory<char>)(object)value!).Span);
-        if (typeof(T) == typeof(Memory<byte>))
-            return AddBytes(data, ((Memory<byte>)(object)value!).Span);
-        if (typeof(T) == typeof(ReadOnlyMemory<byte>))
-            return AddBytes(data, ((Memory<byte>)(object)value!).Span);
-
-        return Add(data, Vector128.CreateScalar(value == null ? 0 : value.GetHashCode()).AsByte());
+        return Add(data, Vector128.CreateScalar(value?.GetHashCode() ?? 0).AsByte());
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
@@ -130,112 +119,110 @@ public static class AesHasher
 
         if (value.Length <= 8)
         {
-            data = Add(data, ReadSmall(value));
+            return AddBytes_len_8(data, value);
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+            static AHasher2Data AddBytes_len_8(AHasher2Data data, ReadOnlySpan<byte> value)
+                => Add(data, ReadSmall(value));
         }
         else if (value.Length > 32)
         {
             if (value.Length > 64)
             {
-                Span<Vector128<byte>> tail = stackalloc Vector128<byte>[4]
-#if NET8_0_OR_GREATER
-                {
-                    Vector128.LoadUnsafe(in value[^(sizeof(ulong) * 2)]),
-                    Vector128.LoadUnsafe(in value[^(sizeof(ulong) * 4)]),
-                    Vector128.LoadUnsafe(in value[^(sizeof(ulong) * 6)]),
-                    Vector128.LoadUnsafe(in value[^(sizeof(ulong) * 8)]),
-                };
-#else
-                {
-                    Vector128.LoadUnsafe(ref Unsafe.AsRef(in value[^(sizeof(ulong) * 2)])),
-                    Vector128.LoadUnsafe(ref Unsafe.AsRef(in value[^(sizeof(ulong) * 4)])),
-                    Vector128.LoadUnsafe(ref Unsafe.AsRef(in value[^(sizeof(ulong) * 6)])),
-                    Vector128.LoadUnsafe(ref Unsafe.AsRef(in value[^(sizeof(ulong) * 8)])),
-                };
-#endif
-                Span<Vector128<byte>> current = stackalloc Vector128<byte>[4]
-                    { data.key, data.key, data.key, data.key };
-                current[0] = AesEnc(current[0], tail[0]);
-                current[1] = AesEnc(current[1], tail[1]);
-                current[2] = AesEnc(current[2], tail[2]);
-                current[3] = AesEnc(current[3], tail[3]);
-                Span<Vector128<byte>> sum = stackalloc Vector128<byte>[2] { data.key, ~data.key };
-                sum[0] = AddByU64(sum[0], tail[0]);
-                sum[1] = AddByU64(sum[1], tail[1]);
-                sum[0] = ShuffleAndAdd(sum[0], tail[2]);
-                sum[1] = ShuffleAndAdd(sum[1], tail[3]);
+                return AddBytes_len_64(data, value);
 
-                // tail will not use again
-                for (; value.Length > 64; value = value[(sizeof(ulong) * 2 * 4)..])
+                [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+                static AHasher2Data AddBytes_len_64(AHasher2Data data, ReadOnlySpan<byte> value)
                 {
-                    var blocks = tail;
-#if NET8_0_OR_GREATER
-                    blocks[0] = Vector128.LoadUnsafe(in value[0]);
-                    blocks[1] = Vector128.LoadUnsafe(in value[sizeof(ulong) * 2]);
-                    blocks[2] = Vector128.LoadUnsafe(in value[sizeof(ulong) * 4]);
-                    blocks[3] = Vector128.LoadUnsafe(in value[sizeof(ulong) * 6]);
-#else
-                    blocks[0] = Vector128.LoadUnsafe(ref Unsafe.AsRef(in value[0]));
-                    blocks[1] = Vector128.LoadUnsafe(ref Unsafe.AsRef(in value[sizeof(ulong) * 2]));
-                    blocks[2] = Vector128.LoadUnsafe(ref Unsafe.AsRef(in value[sizeof(ulong) * 4]));
-                    blocks[3] = Vector128.LoadUnsafe(ref Unsafe.AsRef(in value[sizeof(ulong) * 6]));
-#endif
+                    var t0 = Vector128.LoadUnsafe(in value[^(sizeof(ulong) * 2)]);
+                    var s0 = AddByU64(data.key, t0);
+                    var c0 = AesEnc(data.key, t0);
+                    var t2 = Vector128.LoadUnsafe(in value[^(sizeof(ulong) * 6)]);
+                    s0 = ShuffleAndAdd(s0, t2);
+                    var c2 = AesEnc(data.key, t2);
+                    var t1 = Vector128.LoadUnsafe(in value[^(sizeof(ulong) * 4)]);
+                    var s1 = AddByU64(~data.key, t1);
+                    var c1 = AesEnc(data.key, t1);
+                    var t3 = Vector128.LoadUnsafe(in value[^(sizeof(ulong) * 8)]);
+                    s1 = ShuffleAndAdd(s1, t3);
+                    var c3 = AesEnc(data.key, t3);
 
-                    current[0] = AesEnc(current[0], blocks[0]);
-                    current[1] = AesEnc(current[1], blocks[1]);
-                    current[2] = AesEnc(current[2], blocks[2]);
-                    current[3] = AesEnc(current[3], blocks[3]);
-                    sum[0] = ShuffleAndAdd(sum[0], blocks[0]);
-                    sum[1] = ShuffleAndAdd(sum[1], blocks[1]);
-                    sum[0] = ShuffleAndAdd(sum[0], blocks[2]);
-                    sum[1] = ShuffleAndAdd(sum[1], blocks[3]);
+                    for (var i = 0; i + sizeof(ulong) * 2 * 4 < value.Length; i += sizeof(ulong) * 2 * 4)
+                    {
+                        var b0 = Vector128.LoadUnsafe(
+                            in Unsafe.Add(ref Unsafe.AsRef(in value[0]), i));
+                        c0 = AesEnc(c0, b0);
+                        s0 = ShuffleAndAdd(s0, b0);
+                        var b1 = Vector128.LoadUnsafe(
+                            in Unsafe.Add(ref Unsafe.AsRef(in value[0]), i + sizeof(ulong) * 2));
+                        c1 = AesEnc(c1, b1);
+                        s1 = ShuffleAndAdd(s1, b1);
+                        var b2 = Vector128.LoadUnsafe(
+                            in Unsafe.Add(ref Unsafe.AsRef(in value[0]), i + sizeof(ulong) * 4));
+                        c2 = AesEnc(c2, b2);
+                        s0 = ShuffleAndAdd(s0, b2);
+                        var b3 = Vector128.LoadUnsafe(
+                            in Unsafe.Add(ref Unsafe.AsRef(in value[0]), i + sizeof(ulong) * 6));
+                        c3 = AesEnc(c3, b3);
+                        s1 = ShuffleAndAdd(s1, b3);
+                    }
+
+                    data = Add(data, c0);
+                    data = Add(data, c1);
+                    data = Add(data, c2);
+                    data = Add(data, c3);
+                    data = Add(data, s0);
+                    data = Add(data, s1);
+                    return data;
                 }
-
-                data = Add(data, current[0]);
-                data = Add(data, current[1]);
-                data = Add(data, current[2]);
-                data = Add(data, current[3]);
-                data = Add(data, sum[0]);
-                data = Add(data, sum[1]);
             }
             else // 33 .. 64
             {
-#if NET8_0_OR_GREATER
-                var a = Vector128.LoadUnsafe(in value[0]);
-                var b = Vector128.LoadUnsafe(in value[sizeof(ulong) * 2]);
-                var c = Vector128.LoadUnsafe(in value[^(sizeof(ulong) * 4)]);
-                var d = Vector128.LoadUnsafe(in value[^(sizeof(ulong) * 2)]);
-#else
-                var a = Vector128.LoadUnsafe(ref Unsafe.AsRef(in value[0]));
-                var b = Vector128.LoadUnsafe(ref Unsafe.AsRef(in value[sizeof(ulong) * 2]));
-                var c = Vector128.LoadUnsafe(ref Unsafe.AsRef(in value[^(sizeof(ulong) * 4)]));
-                var d = Vector128.LoadUnsafe(ref Unsafe.AsRef(in value[^(sizeof(ulong) * 2)]));
-#endif
-                data = Add(data, a);
-                data = Add(data, b);
-                data = Add(data, c);
-                data = Add(data, d);
+                return AddBytes_len_33_64(data, value);
+
+                [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+                static AHasher2Data AddBytes_len_33_64(AHasher2Data data, ReadOnlySpan<byte> value)
+                {
+                    var a = Vector128.LoadUnsafe(in value[0]);
+                    var b = Vector128.LoadUnsafe(in value[sizeof(ulong) * 2]);
+                    var c = Vector128.LoadUnsafe(in value[^(sizeof(ulong) * 4)]);
+                    var d = Vector128.LoadUnsafe(in value[^(sizeof(ulong) * 2)]);
+                    data = Add(data, a);
+                    data = Add(data, b);
+                    data = Add(data, c);
+                    data = Add(data, d);
+                    return data;
+                }
             }
         }
         else if (value.Length > 16) // 17 .. 32
         {
-#if NET8_0_OR_GREATER
-            var a = Vector128.LoadUnsafe(in value[0]);
-            var b = Vector128.LoadUnsafe(in value[^(sizeof(ulong) * 2)]);
-#else
-            var a = Vector128.LoadUnsafe(ref Unsafe.AsRef(in value[0]));
-            var b = Vector128.LoadUnsafe(ref Unsafe.AsRef(in value[^(sizeof(ulong) * 2)]));
-#endif
-            data = Add(data, a);
-            data = Add(data, b);
+            return AddBytes_len_17_32(data, value);
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+            static AHasher2Data AddBytes_len_17_32(AHasher2Data data, ReadOnlySpan<byte> value)
+            {
+                var a = Vector128.LoadUnsafe(in value[0]);
+                var b = Vector128.LoadUnsafe(in value[^(sizeof(ulong) * 2)]);
+                data = Add(data, a);
+                data = Add(data, b);
+                return data;
+            }
         }
         else // 9 .. 16
         {
-            var a = Vector128.Create(MemoryMarshal.Cast<byte, ulong>(value)[0],
-                MemoryMarshal.Cast<byte, ulong>(value.Slice(value.Length - sizeof(ulong), sizeof(ulong)))[0]);
-            data = Add(data, a);
-        }
+            return AddBytes_len_9_16(data, value);
 
-        return data;
+            [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+            static AHasher2Data AddBytes_len_9_16(AHasher2Data data, ReadOnlySpan<byte> value)
+            {
+                var a = Vector128.LoadUnsafe(in value[0]);
+                var b = Vector128.LoadUnsafe(in value[^(sizeof(ulong) * 2)]);
+                data = Add(data, a);
+                data = Add(data, b);
+                return data;
+            }
+        }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
@@ -243,20 +230,34 @@ public static class AesHasher
     {
         if (value.Length > 8)
         {
-            data = AddBytes(data, value);
-            data.enc = AesEnc(data.sum, data.enc);
-            data.enc = AesDec(AesDec(data.enc, data.key), data.enc);
+            return AddString_large(data, value);
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+            static AHasher2Data AddString_large(AHasher2Data data, ReadOnlySpan<byte> value)
+            {
+                data = AddBytes(data, value);
+                data.enc = AesEnc(data.sum, data.enc);
+                data.enc = AesDec(AesDec(data.enc, data.key), data.enc);
+                return data;
+            }
         }
         else
         {
-            data = AddLength(data, value.Length);
+            return AddString_small(data, value);
 
-            var a = ReadSmall(value);
-            data.sum = ShuffleAndAdd(data.sum, a);
-            data.enc = AesEnc(data.sum, data.enc);
-            data.enc = AesDec(AesDec(data.enc, data.key), data.enc);
+            [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+            static AHasher2Data AddString_small(AHasher2Data data, ReadOnlySpan<byte> value)
+            {
+                data = AddLength(data, value.Length);
+
+                var a = ReadSmall(value);
+                data.sum = ShuffleAndAdd(data.sum, a);
+                data.enc = AesEnc(data.sum, data.enc);
+                data.enc = AesDec(AesDec(data.enc, data.key), data.enc);
+
+                return data;
+            }
         }
-        return data;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
@@ -286,19 +287,25 @@ public static class AesHasher
         return data;
     }
 
-
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
     private static Vector128<byte> ReadSmall(ReadOnlySpan<byte> value)
     {
         Debug.Assert(value.Length is < 8 and >= 0);
+        ref var addr = ref Unsafe.AsRef(in value[0]);
         return value.Length switch
         {
             0 => Vector128<byte>.Zero,
-            1 => Vector128.Create((ulong)value[0], value[0]).AsByte(),
-            2 or 3 => Vector128.Create((ulong)MemoryMarshal.Cast<byte, ushort>(value)[0], value[^1]).AsByte(),
-            _ => Vector128.Create((ulong)MemoryMarshal.Cast<byte, uint>(value)[0],
-                    MemoryMarshal.Cast<byte, uint>(value.Slice(value.Length - sizeof(uint), sizeof(uint)))[0])
-                .AsByte()
+            1 => Vector128.CreateScalar(addr).AsByte(),
+            2 => Vector128.CreateScalar(Unsafe.As<byte, ushort>(ref addr)).AsByte(),
+            3 => Vector128.Create(Unsafe.As<byte, ushort>(ref addr), Unsafe.Add(ref addr, 2)).AsByte(),
+            4 => Vector128.CreateScalar(Unsafe.As<byte, uint>(ref addr)).AsByte(),
+            5 => Vector128.Create(Unsafe.As<byte, uint>(ref addr),
+                Unsafe.As<byte, uint>(ref Unsafe.Add(ref addr, 5 - sizeof(uint)))).AsByte(),
+            6 => Vector128.Create(Unsafe.As<byte, uint>(ref addr),
+                Unsafe.As<byte, uint>(ref Unsafe.Add(ref addr, 6 - sizeof(uint)))).AsByte(),
+            7 => Vector128.Create(Unsafe.As<byte, uint>(ref addr),
+                Unsafe.As<byte, uint>(ref Unsafe.Add(ref addr, 7 - sizeof(uint)))).AsByte(),
+            _ => throw new ArgumentOutOfRangeException(nameof(value)),
         };
     }
 
