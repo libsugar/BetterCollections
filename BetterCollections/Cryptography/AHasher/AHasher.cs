@@ -26,7 +26,7 @@ public struct AHasher : IHasher
         get => _globalRandomState;
     }
 
-    public static readonly AHasherRandomState _globalRandomState = GenerateRandomState();
+    internal static readonly AHasherRandomState _globalRandomState = GenerateRandomState();
 
     [ThreadStatic]
     private static AHasherRandomState _threadCurrentRandomState;
