@@ -33,6 +33,19 @@ public class BenchmarkAHashString
         hasher = AesHasher.AddString(hasher, Str);
         return AesHasher.ToHashCode(hasher);
     }
+    
+    [Benchmark]
+    public int Soft_AddString1()
+    {
+        var r = 0;
+        for (int i = 0; i < 1000; i++)
+        {
+            var hasher = SoftHasher.Create(AHasher2.GlobalRandomState);
+            hasher = SoftHasher.AddString(hasher, Str);
+            r += SoftHasher.ToHashCode(hasher);
+        }
+        return r;
+    }
 #endif
 
     [Benchmark(Baseline = true)]

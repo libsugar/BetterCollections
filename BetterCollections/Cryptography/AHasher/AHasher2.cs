@@ -91,14 +91,7 @@ public struct AHasher2 : IHasher2
     public AHasher2(AHasherRandomState randomState)
     {
         Unsafe.SkipInit(out this);
-        if (AesHasher.IsSupported)
-        {
-            data = AesHasher.Create(randomState);
-        }
-        else
-        {
-            throw new NotImplementedException();
-        }
+        data = AesHasher.IsSupported ? AesHasher.Create(randomState) : SoftHasher.Create(randomState);
     }
 
     #region IHasher
@@ -106,59 +99,52 @@ public struct AHasher2 : IHasher2
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
     public void Add(int value)
     {
-        if (AesHasher.IsSupported) data = AesHasher.Add(data, value);
-        else throw new NotImplementedException();
+        data = AesHasher.IsSupported ? AesHasher.Add(data, value) : SoftHasher.Add(data, value);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
     public void Add(long value)
     {
-        if (AesHasher.IsSupported) data = AesHasher.Add(data, value);
-        else throw new NotImplementedException();
+        data = AesHasher.IsSupported ? AesHasher.Add(data, value) : SoftHasher.Add(data, value);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
     public void Add<T>(T value)
     {
-        if (AesHasher.IsSupported) data = AesHasher.Add(data, value);
-        else throw new NotImplementedException();
+        data = AesHasher.IsSupported ? AesHasher.Add(data, value) : SoftHasher.Add(data, value);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
     public void Add<T>(T value, IEqualityComparer<T>? comparer)
     {
-        if (AesHasher.IsSupported) data = AesHasher.Add(data, value, comparer);
-        else throw new NotImplementedException();
+        data = AesHasher.IsSupported ? AesHasher.Add(data, value, comparer) : SoftHasher.Add(data, value, comparer);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
     public void AddBytes(ReadOnlySpan<byte> value)
     {
-        if (AesHasher.IsSupported) data = AesHasher.AddBytes(data, value);
-        else throw new NotImplementedException();
+        data = AesHasher.IsSupported ? AesHasher.AddBytes(data, value) : SoftHasher.AddBytes(data, value);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
     public void AddString(ReadOnlySpan<byte> value)
     {
-        if (AesHasher.IsSupported) data = AesHasher.AddString(data, value);
-        else throw new NotImplementedException();
+        data = AesHasher.IsSupported ? AesHasher.AddString(data, value) : SoftHasher.AddString(data, value);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
     public void AddString(ReadOnlySpan<char> value)
     {
-        if (AesHasher.IsSupported) data = AesHasher.AddString(data, value);
-        else throw new NotImplementedException();
+        data = AesHasher.IsSupported ? AesHasher.AddString(data, value) : SoftHasher.AddString(data, value);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
     public int ToHashCode() =>
-        AesHasher.IsSupported ? AesHasher.ToHashCode(data) : throw new NotImplementedException();
+        AesHasher.IsSupported ? AesHasher.ToHashCode(data) : SoftHasher.ToHashCode(data);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
     public long ToHashCodeLong() =>
-        AesHasher.IsSupported ? AesHasher.ToHashCodeLong(data) : throw new NotImplementedException();
+        AesHasher.IsSupported ? AesHasher.ToHashCodeLong(data) : SoftHasher.ToHashCodeLong(data);
 
     #endregion
 

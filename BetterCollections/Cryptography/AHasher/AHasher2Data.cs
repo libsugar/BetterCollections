@@ -27,26 +27,43 @@ public struct AHasher2Data
         this.enc = enc;
     }
 
-    [UnscopedRef]
-    public ref ulong buffer
+    public ulong buffer
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-        get => ref Unsafe.As<AHasher2Data, ulong>(ref this);
+        get => enc.AsUInt64().GetElement(0);
+        [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+        set => enc.AsUInt64().WithElement(0, value);
     }
 
-    [UnscopedRef]
-    public ref ulong pad
+    public ulong pad
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-        get => ref Unsafe.Add(ref Unsafe.As<AHasher2Data, ulong>(ref this), 1);
+        get => enc.AsUInt64().GetElement(1);
+        [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+        set => enc.AsUInt64().WithElement(1, value);
+    }
+
+    public Vector128<ulong> extra
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+        get => sum.AsUInt64();
+        [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+        set => sum = value.AsByte();
+    }
+
+    public Vector128<ulong> buffer_extra1
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+        get => Vector128.ConditionalSelect(Vector128.Create(ulong.MaxValue, 0), enc.AsUInt64(), sum.AsUInt64());
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public AHasher2Data(ulong buffer, ulong pad)
+    public AHasher2Data(ulong buffer, ulong pad, Vector128<byte> extra)
     {
         Unsafe.SkipInit(out this);
         this.buffer = buffer;
         this.pad = pad;
+        this.extra = extra.AsUInt64();
     }
 }
 

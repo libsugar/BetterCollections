@@ -216,11 +216,11 @@ public static class AesHasher
             [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
             static AHasher2Data AddBytes_len_9_16(AHasher2Data data, ReadOnlySpan<byte> value)
             {
-                var a = Vector128.LoadUnsafe(in value[0]);
-                var b = Vector128.LoadUnsafe(in value[^(sizeof(ulong) * 2)]);
-                data = Add(data, a);
-                data = Add(data, b);
-                return data;
+                ref var addr = ref Unsafe.AsRef(in value[0]);
+                var a = Unsafe.As<byte, ulong>(ref addr);
+                var b = Unsafe.As<byte, ulong>(ref Unsafe.Add(ref addr, value.Length - sizeof(ulong)));
+                var v = Vector128.Create(a, b).AsByte();
+                return Add(data, v);
             }
         }
     }
