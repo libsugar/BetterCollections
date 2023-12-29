@@ -185,6 +185,16 @@ public static partial class Utils
         return Regex.Replace(a, ".{8}(?!$)", "$0_");
 #endif
     }
+    
+    public static string ToBinaryString(this uint value)
+    {
+        var a = Convert.ToString((int)value, 2).PadLeft(32, '0');
+#if NET8_0_OR_GREATER
+        return SplitBytes().Replace(a, "$0_");
+#else
+        return Regex.Replace(a, ".{8}(?!$)", "$0_");
+#endif
+    }
 
     /// <summary>
     /// Evaluate whether a given integral value is a power of 2.
