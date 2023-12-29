@@ -12,7 +12,7 @@ namespace Benchmark;
 [DisassemblyDiagnoser]
 public class BenchmarkAHash
 {
-    private readonly AHasher AHasher = new();
+    private readonly AHasherLegacy aHasherLegacy = new();
 
     [Benchmark]
     public ulong AHash()
@@ -20,7 +20,7 @@ public class BenchmarkAHash
         var r = 0ul;
         for (int i = 0; i < 1000; i++)
         {
-            r += AHasher.Hash((ulong)i);
+            r += aHasherLegacy.Hash((ulong)i);
         }
         return r;
     }
@@ -32,7 +32,7 @@ public class BenchmarkAHash
         var r = 0;
         for (int i = 0; i < 1000; i++)
         {
-            r += AHasher2.Combine(i);
+            r += AHasher.Combine(i);
         }
         return r;
     }
@@ -43,7 +43,7 @@ public class BenchmarkAHash
         var r = 0;
         for (int i = 0; i < 1000; i++)
         {
-            var hasher = AesHasher.Create(AHasher2.GlobalRandomState);
+            var hasher = AesHasher.Create(AHasher.GlobalRandomState);
             hasher = AesHasher.Add(hasher, i);
             r += AesHasher.ToHashCode(hasher);
         }

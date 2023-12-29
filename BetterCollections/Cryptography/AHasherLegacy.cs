@@ -17,7 +17,7 @@ namespace BetterCollections.Cryptography;
 /// A hasher that ensures even distribution of each bit
 /// <para>If possible use Aes SIMD acceleration (.net7+)</para>
 /// </summary>
-public readonly struct AHasher : IHasher
+public readonly struct AHasherLegacy : IHasherLegacy
 {
 #if NET7_0_OR_GREATER
     private readonly Union union;
@@ -43,7 +43,7 @@ public readonly struct AHasher : IHasher
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public AHasher()
+    public AHasherLegacy()
     {
         var rand = Random.Shared;
         Span<Vector128<byte>> bytes = stackalloc Vector128<byte>[2];
@@ -61,11 +61,11 @@ public readonly struct AHasher : IHasher
     }
 
     [ThreadStatic]
-    private static AHasher _thread_current;
+    private static AHasherLegacy _thread_current;
     [ThreadStatic]
     private static bool _thread_current_has;
 
-    public static AHasher ThreadCurrent
+    public static AHasherLegacy ThreadCurrent
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get
@@ -79,7 +79,7 @@ public readonly struct AHasher : IHasher
         }
     }
 
-    public AHasher(ReadOnlySpan<ulong> keys)
+    public AHasherLegacy(ReadOnlySpan<ulong> keys)
     {
         if (keys.Length < 4) throw new ArgumentOutOfRangeException(nameof(keys), "length of keys must >= 4");
         if (X86.Aes.IsSupported || Arm.Aes.IsSupported)
@@ -149,7 +149,7 @@ public readonly struct AHasher : IHasher
     private readonly SoftHasher softHasher;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public AHasher()
+    public AHasherLegacy()
     {
 #if NETSTANDARD
         var rand = new Random();
@@ -161,7 +161,7 @@ public readonly struct AHasher : IHasher
         softHasher = new(keys);
     }
 
-    public AHasher(ReadOnlySpan<ulong> keys)
+    public AHasherLegacy(ReadOnlySpan<ulong> keys)
     {
         if (keys.Length < 4) throw new ArgumentOutOfRangeException(nameof(keys), "length of keys must >= 4");
         softHasher = new(keys);

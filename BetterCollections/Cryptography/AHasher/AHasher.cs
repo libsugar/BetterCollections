@@ -4,10 +4,6 @@ using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using BetterCollections.Cryptography.AHasherImpl;
-using System.Runtime.Intrinsics;
-using X86 = System.Runtime.Intrinsics.X86;
-using Arm = System.Runtime.Intrinsics.Arm;
-
 
 namespace BetterCollections.Cryptography;
 
@@ -17,7 +13,7 @@ namespace BetterCollections.Cryptography;
 /// A hasher that ensures even distribution of each bit
 /// <para>If possible use Aes SIMD acceleration (.net7+)</para>
 /// </summary>
-public struct AHasher2 : IHasher2
+public struct AHasher : IHasher
 {
     #region GlobalRandomState
 
@@ -66,20 +62,20 @@ public struct AHasher2 : IHasher2
 
     #region Create
 
-    public static AHasher2 Global
+    public static AHasher Global
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
         get;
     } = new(GlobalRandomState);
 
-    public static AHasher2 ThreadCurrent
+    public static AHasher ThreadCurrent
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
         get;
     } = new(ThreadCurrentRandomState);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public static AHasher2 CreateRandom() => new(GenerateRandomState());
+    public static AHasher CreateRandom() => new(GenerateRandomState());
 
     #endregion
 
@@ -88,7 +84,7 @@ public struct AHasher2 : IHasher2
     private AHasher2Data data;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
-    public AHasher2(AHasherRandomState randomState)
+    public AHasher(AHasherRandomState randomState)
     {
         Unsafe.SkipInit(out this);
         data = AesHasher.IsSupported ? AesHasher.Create(randomState) : SoftHasher.Create(randomState);

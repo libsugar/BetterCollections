@@ -21,7 +21,7 @@ public class BenchmarkAHashString
     [Benchmark]
     public int AHash_AddString_1()
     {
-        var hasher = AHasher2.Global;
+        var hasher = AHasher.Global;
         hasher.AddString(Str);
         return hasher.ToHashCode();
     }
@@ -29,7 +29,7 @@ public class BenchmarkAHashString
     [Benchmark]
     public int AHash_AddString_2()
     {
-        var hasher = AesHasher.Create(AHasher2.GlobalRandomState);
+        var hasher = AesHasher.Create(AHasher.GlobalRandomState);
         hasher = AesHasher.AddString(hasher, Str);
         return AesHasher.ToHashCode(hasher);
     }
@@ -40,7 +40,7 @@ public class BenchmarkAHashString
         var r = 0;
         for (int i = 0; i < 1000; i++)
         {
-            var hasher = SoftHasher.Create(AHasher2.GlobalRandomState);
+            var hasher = SoftHasher.Create(AHasher.GlobalRandomState);
             hasher = SoftHasher.AddString(hasher, Str);
             r += SoftHasher.ToHashCode(hasher);
         }
