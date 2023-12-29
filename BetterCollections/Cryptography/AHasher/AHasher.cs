@@ -11,8 +11,10 @@ namespace BetterCollections.Cryptography;
 // reference https://github.com/tkaitchuck/aHash/tree/master
 
 /// <summary>
-/// A hasher that ensures even distribution of each bit
-/// <para>If possible use Aes SIMD acceleration (.net7+)</para>
+/// A hasher that ensures even distribution of each bit, alternatives to <see cref="System.HashCode"/>
+/// <para>If possible use VAes SIMD acceleration</para>
+/// <para>This type is .net8+ only, JIT optimization capabilities lower than net8 are insufficient</para>
+/// <para>Algorithm from <a href="https://github.com/tkaitchuck/aHash/tree/master">aHash</a></para>
 /// </summary>
 public struct AHasher : IHasher
 {
