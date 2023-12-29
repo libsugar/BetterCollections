@@ -155,21 +155,63 @@ public struct AHasher2 : IHasher2
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
     public static int Combine<T1>(T1 value1)
     {
-        if (AesHasher.IsSupported)
-        {
-            return AesHasher.Combine(value1);
-        }
-        throw new NotImplementedException();
+        return AesHasher.IsSupported ? AesHasher.Combine(value1) : SoftHasher.Combine(value1);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
     public static int Combine<T1, T2>(T1 value1, T2 value2)
     {
-        if (AesHasher.IsSupported)
-        {
-            return AesHasher.Combine(value1, value2);
-        }
-        throw new NotImplementedException();
+        return AesHasher.IsSupported ? AesHasher.Combine(value1, value2) : SoftHasher.Combine(value1, value2);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static int Combine<T1, T2, T3>(T1 value1, T2 value2, T3 value3)
+    {
+        return AesHasher.IsSupported
+            ? AesHasher.Combine(value1, value2, value3)
+            : SoftHasher.Combine(value1, value2, value3);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static int Combine<T1, T2, T3, T4>(T1 value1, T2 value2, T3 value3, T4 value4)
+    {
+        return AesHasher.IsSupported
+            ? AesHasher.Combine(value1, value2, value3, value4)
+            : SoftHasher.Combine(value1, value2, value3, value4);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static int Combine<T1, T2, T3, T4, T5>(T1 value1, T2 value2, T3 value3, T4 value4, T5 value5)
+    {
+        return AesHasher.IsSupported
+            ? AesHasher.Combine(value1, value2, value3, value4, value5)
+            : SoftHasher.Combine(value1, value2, value3, value4, value5);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static int Combine<T1, T2, T3, T4, T5, T6>(T1 value1, T2 value2, T3 value3, T4 value4, T5 value5, T6 value6)
+    {
+        return AesHasher.IsSupported
+            ? AesHasher.Combine(value1, value2, value3, value4, value5, value6)
+            : SoftHasher.Combine(value1, value2, value3, value4, value5, value6);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static int Combine<T1, T2, T3, T4, T5, T6, T7>(T1 value1, T2 value2, T3 value3, T4 value4, T5 value5,
+        T6 value6, T7 value7)
+    {
+        return AesHasher.IsSupported
+            ? AesHasher.Combine(value1, value2, value3, value4, value5, value6, value7)
+            : SoftHasher.Combine(value1, value2, value3, value4, value5, value6, value7);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static int Combine<T1, T2, T3, T4, T5, T6, T7, T8>(T1 value1, T2 value2, T3 value3, T4 value4, T5 value5,
+        T6 value6, T7 value7, T8 value8)
+    {
+        return AesHasher.IsSupported
+            ? AesHasher.Combine(value1, value2, value3, value4, value5, value6, value7, value8)
+            : SoftHasher.Combine(value1, value2, value3, value4, value5, value6, value7, value8);
     }
 
     #endregion

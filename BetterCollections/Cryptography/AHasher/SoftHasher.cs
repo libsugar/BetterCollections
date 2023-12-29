@@ -194,6 +194,104 @@ public static class SoftHasher
             _ => throw new ArgumentOutOfRangeException(nameof(value)),
         };
     }
+    
+    #region Combine
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static int Combine<T1>(T1 value1)
+    {
+        var data = Create(AHasher2._globalRandomState);
+        data = Add(data, value1);
+        return ToHashCode(data);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static int Combine<T1, T2>(T1 value1, T2 value2)
+    {
+        var data = Create(AHasher2._globalRandomState);
+        data = Add(data, value1);
+        data = Add(data, value2);
+        return ToHashCode(data);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static int Combine<T1, T2, T3>(T1 value1, T2 value2, T3 value3)
+    {
+        var data = Create(AHasher2._globalRandomState);
+        data = Add(data, value1);
+        data = Add(data, value2);
+        data = Add(data, value3);
+        return ToHashCode(data);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static int Combine<T1, T2, T3, T4>(T1 value1, T2 value2, T3 value3, T4 value4)
+    {
+        var data = Create(AHasher2._globalRandomState);
+        data = Add(data, value1);
+        data = Add(data, value2);
+        data = Add(data, value3);
+        data = Add(data, value4);
+        return ToHashCode(data);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static int Combine<T1, T2, T3, T4, T5>(T1 value1, T2 value2, T3 value3, T4 value4, T5 value5)
+    {
+        var data = Create(AHasher2._globalRandomState);
+        data = Add(data, value1);
+        data = Add(data, value2);
+        data = Add(data, value3);
+        data = Add(data, value4);
+        data = Add(data, value5);
+        return ToHashCode(data);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static int Combine<T1, T2, T3, T4, T5, T6>(T1 value1, T2 value2, T3 value3, T4 value4, T5 value5, T6 value6)
+    {
+        var data = Create(AHasher2._globalRandomState);
+        data = Add(data, value1);
+        data = Add(data, value2);
+        data = Add(data, value3);
+        data = Add(data, value4);
+        data = Add(data, value5);
+        data = Add(data, value6);
+        return ToHashCode(data);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static int Combine<T1, T2, T3, T4, T5, T6, T7>(T1 value1, T2 value2, T3 value3, T4 value4, T5 value5,
+        T6 value6, T7 value7)
+    {
+        var data = Create(AHasher2._globalRandomState);
+        data = Add(data, value1);
+        data = Add(data, value2);
+        data = Add(data, value3);
+        data = Add(data, value4);
+        data = Add(data, value5);
+        data = Add(data, value6);
+        data = Add(data, value7);
+        return ToHashCode(data);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining), SkipLocalsInit]
+    public static int Combine<T1, T2, T3, T4, T5, T6, T7, T8>(T1 value1, T2 value2, T3 value3, T4 value4, T5 value5,
+        T6 value6, T7 value7, T8 value8)
+    {
+        var data = Create(AHasher2._globalRandomState);
+        data = Add(data, value1);
+        data = Add(data, value2);
+        data = Add(data, value3);
+        data = Add(data, value4);
+        data = Add(data, value5);
+        data = Add(data, value6);
+        data = Add(data, value7);
+        data = Add(data, value8);
+        return ToHashCode(data);
+    }
+
+    #endregion
 }
 
 #endif
