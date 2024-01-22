@@ -5,7 +5,7 @@
         <LangVersion>12.0</LangVersion>
         <Nullable>enable</Nullable>
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-        <Version>0.3.1</Version>
+        <Version>0.3.2</Version>
         <PackageProjectUrl>https://github.com/libsugar/BetterCollections</PackageProjectUrl>
         <Description>Some better collection implementations than the standard library</Description>
         <PackageReadmeFile>README.md</PackageReadmeFile>

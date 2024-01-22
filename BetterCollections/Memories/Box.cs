@@ -4,6 +4,24 @@ using System.Runtime.CompilerServices;
 
 namespace BetterCollections.Memories;
 
+public static class Box
+{
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static Box<T> Make<T>(T value) => new(value);
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ReadOnlyBox<T> MakeReadOnly<T>(T value) => new(value);
+}
+
+public static class BoxEx
+{
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static Box<T> Box<T>(this T value) => new(value);
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ReadOnlyBox<T> ReadOnlyBox<T>(this T value) => new(value);
+}
+
 public class Box<T>(T Value) : IRef<T>, IReadOnlyRef<T>, IStrongBox,
     IEquatable<T>, IEquatable<Box<T>>,
     IComparable<T>, IComparable<Box<T>>
@@ -26,7 +44,7 @@ public class Box<T>(T Value) : IRef<T>, IReadOnlyRef<T>, IStrongBox,
 
     public bool Equals(T? other) => EqualityComparer<T>.Default.Equals(Value, other!);
 
-    public bool Equals(Box<T>? other) => ReferenceEquals(other, null) && Equals(other!.Value);
+    public bool Equals(Box<T>? other) => !ReferenceEquals(other, null) && Equals(other.Value);
 
 
     public override bool Equals(object? obj) => obj is Box<T> box ? Equals(box) : obj is T v && Equals(v);
@@ -100,7 +118,7 @@ public class ReadOnlyBox<T>(T Value) : IReadOnlyRef<T>,
 
     public bool Equals(T? other) => EqualityComparer<T>.Default.Equals(Value, other!);
 
-    public bool Equals(ReadOnlyBox<T>? other) => ReferenceEquals(other, null) && Equals(other!.Value);
+    public bool Equals(ReadOnlyBox<T>? other) => !ReferenceEquals(other, null) && Equals(other.Value);
 
 
     public override bool Equals(object? obj) => obj is ReadOnlyBox<T> box ? Equals(box) : obj is T v && Equals(v);

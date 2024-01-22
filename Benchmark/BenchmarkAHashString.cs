@@ -15,7 +15,7 @@ public class BenchmarkAHashString
 {
     [Params("asd", "1234567890", "1234567890_1234567890_1234567890_1234567890",
         "1234567890_1234567890_1234567890_1234567890_1234567890_1234567890_1234567890_1234567890")]
-    public string Str;
+    public string? Str;
 
 #if NET8_0_OR_GREATER
     [Benchmark]
